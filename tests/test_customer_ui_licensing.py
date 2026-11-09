@@ -190,3 +190,44 @@ def test_issue_license_flow_for_customer_with_binding_and_signature(client, db_s
     assert detail_data["licenses"][0]["license_key"] == lic_res["license_key"]
     assert detail_data["licenses"][0]["status"] == "ACTIVE"
     assert inst.installation_code in detail_data["licenses"][0]["bound_installations"][0]
+
+def test_customers_html_structure_and_no_duplicate_modals(client, db_session):
+    """Verifies that customers.html has clean title, clean header, and zero duplicate modal IDs."""
+    client.post("/api/v1/auth/login", json={"username": "superadmin", "password": "SuperAdmin@2026!"})
+    res = client.get("/customers")
+    assert res.status_code == 200
+    html = res.text
+
+    import re
+    titles = re.findall(r"<title>(.*?)</title>", html, re.DOTALL)
+    assert len(titles) == 1
+    assert "modalIssueLicenseForCustomer" not in titles[0]
+    assert "formIssueLicenseForCustomer" not in titles[0]
+    assert "Pelanggan - SIMPATI License Manager" in titles[0]
+
+    # Ensure modalIssueLicenseForCustomer only exists once as an element ID in body
+    modal_ids = [m for m in html.split() if 'id="modalIssueLicenseForCustomer"' in m or "id='modalIssueLicenseForCustomer'" in m]
+    assert len(modal_ids) == 1, f"Expected 1 modalIssueLicenseForCustomer ID, got {len(modal_ids)}"
+
+    # Ensure formIssueLicenseForCustomer only exists once
+    form_ids = [f for f in html.split() if 'id="formIssueLicenseForCustomer"' in f or "id='formIssueLicenseForCustomer'" in f]
+    assert len(form_ids) == 1, f"Expected 1 formIssueLicenseForCustomer ID, got {len(form_ids)}"
+
+    # Ensure modal has z-index: 1100
+    assert 'z-index: 1100' in html
+
+
+def test_package_selection_endpoint_provides_required_fields(client, db_session):
+    """Verifies that GET /api/v1/packages/{id}/detail returns modules and defaults for onCustLicensePackageChange."""
+    client.post("/api/v1/auth/login", json={"username": "superadmin", "password": "SuperAdmin@2026!"})
+    pkg = db_session.query(LicensePackage).first()
+    assert pkg is not None
+
+    res = client.get(f"/api/v1/packages/{pkg.id}/detail")
+    assert res.status_code == 200
+    data = res.json()
+
+    assert "modules" in data
+    assert isinstance(data["modules"], list)
+    assert "default_levels" in data
+    assert "default_max_members" in data

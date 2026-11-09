@@ -93,6 +93,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 2. View Customer Detail & Relations
     window.viewCustomerDetail = async function(customerId, initialTab = 'inst') {
+        // Immediate visual response: switch tab and show modal with loading state
+        if (typeof window.switchCustomerDetailTab === 'function') {
+            window.switchCustomerDetailTab(initialTab);
+        }
+        window.openModal('modalCustomerDetail');
+
+        const licTbodyPre = document.getElementById('detailLicTbody');
+        const instTbodyPre = document.getElementById('detailInstTbody');
+        if (licTbodyPre) licTbodyPre.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--gold-light); padding: 18px;">⏳ Memuat lisensi komersial...</td></tr>`;
+        if (instTbodyPre) instTbodyPre.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--gold-light); padding: 18px;">⏳ Memuat server instalasi...</td></tr>`;
+
         try {
             const res = await fetch(`/api/v1/customers/${customerId}/detail`, {
                 headers: { 'X-CSRF-Token': window.getCsrfToken() },
@@ -245,17 +256,28 @@ document.addEventListener('DOMContentLoaded', () => {
                     opt.textContent = `${inst.name} (${inst.installation_code}) [${inst.environment}]`;
                     instSelect.appendChild(opt);
                 });
+                if (cust.installations.length === 1) {
+                    instSelect.selectedIndex = 1;
+                }
+            }
+        }
+
+        const pkgSelect = document.getElementById('custLicPackageId');
+        if (pkgSelect && pkgSelect.options.length > 1 && !pkgSelect.value) {
+            pkgSelect.selectedIndex = 1;
+            if (typeof window.onCustLicensePackageChange === 'function') {
+                window.onCustLicensePackageChange(pkgSelect.value);
             }
         }
 
         const fromEl = document.getElementById('custLicValidFrom');
         const untilEl = document.getElementById('custLicValidUntil');
-        if (fromEl) {
-            const today = new Date();
-            fromEl.value = today.toISOString().split('T')[0];
+        const today = new Date();
+        if (fromEl) fromEl.value = today.toISOString().split('T')[0];
+        if (untilEl) {
             const nextYear = new Date(today);
             nextYear.setFullYear(today.getFullYear() + 1);
-            if (untilEl) untilEl.value = nextYear.toISOString().split('T')[0];
+            untilEl.value = nextYear.toISOString().split('T')[0];
         }
 
         window.openModal('modalIssueLicenseForCustomer');
@@ -1520,6 +1542,28 @@ document.addEventListener('DOMContentLoaded', () => {
             const validUntilStr = document.getElementById('custLicValidUntil').value;
             const instIdVal = document.getElementById('custLicInstallationId').value;
             const customerId = document.getElementById('custLicCustomerId').value;
+            const packageId = document.getElementById('custLicPackageId').value;
+
+            if (!customerId) {
+                alert('ID Pelanggan tidak valid atau belum termuat.');
+                submitBtn.disabled = false;
+                submitBtn.innerText = originalText;
+                return;
+            }
+
+            if (!packageId) {
+                alert('Silakan pilih Paket Lisensi dari katalog.');
+                submitBtn.disabled = false;
+                submitBtn.innerText = originalText;
+                return;
+            }
+
+            if (!validFromStr || !validUntilStr) {
+                alert('Harap lengkapi masa berlaku lisensi.');
+                submitBtn.disabled = false;
+                submitBtn.innerText = originalText;
+                return;
+            }
 
             const payload = {
                 customer_id: customerId,
