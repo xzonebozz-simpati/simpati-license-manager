@@ -92,17 +92,17 @@ class Settings(BaseSettings):
         """Normalize PostgreSQL URL to use psycopg v3."""
         url = self.DATABASE_URL.strip()
 
-       if url.startswith("postgres://"):
-           url = url.replace("postgres://", "postgresql://", 1)
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql://", 1)
 
-       if url.startswith("postgresql://"):
-           url = url.replace(
-               "postgresql://",
-               "postgresql+psycopg://",
-               1
-           )
+        if url.startswith("postgresql://"):
+            url = url.replace(
+                "postgresql://",
+                "postgresql+psycopg://",
+                1
+            )
 
-       return url
+        return url
 
     @property
     def cors_origins_list(self) -> List[str]:
