@@ -95,6 +95,7 @@ def create_license_endpoint(
 
     return {
         "message": "Lisensi komersial berhasil diterbitkan dan ditandatangani secara digital.",
+        "id": str(lic.id),
         "license_id": str(lic.id),
         "license_key": lic.license_key,
         "status": lic.status,

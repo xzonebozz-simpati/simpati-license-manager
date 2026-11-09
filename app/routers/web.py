@@ -223,8 +223,10 @@ def view_customers(
     db: Session = Depends(get_db),
     current_user: LicenseUser = Depends(require_web_user)
 ):
-    """Renders customer organizations list."""
+    """Renders customer organizations list along with active packages and modules for licensing."""
     customers = db.query(Customer).order_by(Customer.created_at.desc()).all()
+    packages = db.query(LicensePackage).filter(LicensePackage.is_active == True).order_by(LicensePackage.package_name.asc()).all()
+    all_modules = db.query(ModuleRegistry).order_by(ModuleRegistry.is_core.desc(), ModuleRegistry.module_code.asc()).all()
     return templates.TemplateResponse(
         request=request,
         name="customers.html",
@@ -232,7 +234,9 @@ def view_customers(
             "active_menu": "customers",
             "current_user": current_user,
             "csrf_token": get_or_create_csrf_token(request),
-            "customers": customers
+            "customers": customers,
+            "packages": packages,
+            "all_modules": all_modules
         }
     )
 

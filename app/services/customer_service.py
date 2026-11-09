@@ -180,10 +180,15 @@ def get_customer_installations(db: Session, customer_id: UUID) -> List[Installat
 
 
 def get_customer_licenses(db: Session, customer_id: UUID) -> List[Dict[str, Any]]:
-    """Retrieves all licenses belonging to a customer with real-time operational status."""
+    """Retrieves all licenses belonging to a customer with real-time operational status and installations."""
     licenses = db.query(License).filter(License.customer_id == customer_id).order_by(License.created_at.desc()).all()
     results = []
     for lic in licenses:
+        bound_insts = [
+            f"{link.installation.name} ({link.installation.installation_code})"
+            for link in lic.installations
+            if link.is_active and link.installation
+        ]
         results.append({
             "id": lic.id,
             "license_key": lic.license_key,
@@ -192,7 +197,8 @@ def get_customer_licenses(db: Session, customer_id: UUID) -> List[Dict[str, Any]
             "status": compute_license_status(lic),
             "valid_from": lic.valid_from,
             "valid_until": lic.valid_until,
-            "grace_period_days": lic.grace_period_days
+            "grace_period_days": lic.grace_period_days,
+            "bound_installations": bound_insts
         })
     return results
 

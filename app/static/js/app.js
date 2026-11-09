@@ -92,7 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 2. View Customer Detail & Relations
-    window.viewCustomerDetail = async function(customerId) {
+    window.viewCustomerDetail = async function(customerId, initialTab = 'inst') {
         try {
             const res = await fetch(`/api/v1/customers/${customerId}/detail`, {
                 headers: { 'X-CSRF-Token': window.getCsrfToken() },
@@ -103,6 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             const data = await res.json();
+            window.currentCustomerDetailData = data;
 
             // Populate info
             document.getElementById('detailModalTitle').innerText = `Detail Organisasi: ${data.organization_name}`;
@@ -147,28 +148,117 @@ document.addEventListener('DOMContentLoaded', () => {
                 instTbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 18px;">Belum ada server instalasi terdaftar untuk pelanggan ini.</td></tr>`;
             }
 
-            // Licenses table
+            // Licenses table (with bound installations)
             const licTbody = document.getElementById('detailLicTbody');
             if (data.licenses && data.licenses.length > 0) {
-                licTbody.innerHTML = data.licenses.map(lic => `
+                licTbody.innerHTML = data.licenses.map(lic => {
+                    const boundInstText = (lic.bound_installations && lic.bound_installations.length > 0)
+                        ? lic.bound_installations.map(s => `<span class="badge badge-gold" style="font-size: 10px;">${s}</span>`).join(' ')
+                        : '<span style="color: var(--text-muted); font-style: italic;">Belum terikat server</span>';
+
+                    return `
                     <tr>
                         <td class="font-mono"><strong>${lic.license_key}</strong></td>
                         <td><span class="badge badge-gold">${lic.package_name}</span></td>
+                        <td>${boundInstText}</td>
                         <td>${lic.license_type}</td>
                         <td>${new Date(lic.valid_until).toLocaleDateString('id-ID')}</td>
                         <td>${lic.grace_period_days} Hari</td>
                         <td><span class="badge ${lic.status === 'ACTIVE' ? 'badge-active' : (lic.status === 'GRACE_PERIOD' ? 'badge-grace' : 'badge-restricted')}">${lic.status}</span></td>
                     </tr>
-                `).join('');
+                    `;
+                }).join('');
             } else {
-                licTbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 18px;">Belum ada lisensi komersial diterbitkan untuk pelanggan ini.</td></tr>`;
+                licTbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 18px;">Belum ada lisensi komersial diterbitkan untuk pelanggan ini.</td></tr>`;
             }
 
-            window.switchCustomerDetailTab('inst');
+            window.switchCustomerDetailTab(initialTab);
             window.openModal('modalCustomerDetail');
         } catch (err) {
             alert('Kesalahan saat memuat detail: ' + err.message);
         }
+    };
+
+    // Open Customer Detail focused on Licenses Tab
+    window.openCustomerLicenses = function(customerId) {
+        window.viewCustomerDetail(customerId, 'lic');
+    };
+
+    // Open Issue License Modal for currently active Customer
+
+    // Automatically configure modules & capacity when package is selected for Customer
+    window.onCustLicensePackageChange = async function(packageId) {
+        if (!packageId) return;
+        try {
+            const res = await fetch(`/api/v1/packages/${packageId}/detail`, {
+                headers: { 'X-CSRF-Token': window.getCsrfToken() },
+                credentials: 'same-origin'
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+
+            // Set default modules
+            if (data.modules) {
+                document.querySelectorAll('#custLicModulesContainer input[name="cust_modules"]').forEach(cb => {
+                    if (cb.value === 'CORE') {
+                        cb.checked = true;
+                    } else {
+                        cb.checked = data.modules.includes(cb.value);
+                    }
+                });
+            }
+
+            // Set capacity default
+            if (data.default_max_members) {
+                const capEl = document.getElementById('custCapMembers');
+                if (capEl) capEl.value = data.default_max_members;
+            }
+
+            // Set levels default
+            if (data.default_levels) {
+                document.querySelectorAll('input[name="cust_levels"]').forEach(cb => {
+                    cb.checked = data.default_levels.includes(cb.value);
+                });
+            }
+        } catch (e) {
+            // silent fallback
+        }
+    };
+
+    window.openIssueLicenseForCurrentCustomer = function() {
+        const cust = window.currentCustomerDetailData;
+        if (!cust) {
+            alert('Data pelanggan belum dimuat.');
+            return;
+        }
+
+        document.getElementById('custLicCustomerId').value = cust.id;
+        document.getElementById('custLicCustomerName').value = `${cust.organization_name} (${cust.customer_code})`;
+
+        const instSelect = document.getElementById('custLicInstallationId');
+        if (instSelect) {
+            instSelect.innerHTML = '<option value="">-- Hubungkan Nanti / Belum Ada Server --</option>';
+            if (cust.installations && cust.installations.length > 0) {
+                cust.installations.forEach(inst => {
+                    const opt = document.createElement('option');
+                    opt.value = inst.id;
+                    opt.textContent = `${inst.name} (${inst.installation_code}) [${inst.environment}]`;
+                    instSelect.appendChild(opt);
+                });
+            }
+        }
+
+        const fromEl = document.getElementById('custLicValidFrom');
+        const untilEl = document.getElementById('custLicValidUntil');
+        if (fromEl) {
+            const today = new Date();
+            fromEl.value = today.toISOString().split('T')[0];
+            const nextYear = new Date(today);
+            nextYear.setFullYear(today.getFullYear() + 1);
+            if (untilEl) untilEl.value = nextYear.toISOString().split('T')[0];
+        }
+
+        window.openModal('modalIssueLicenseForCustomer');
     };
 
     // Tab switcher in customer detail modal
@@ -1402,6 +1492,83 @@ document.addEventListener('DOMContentLoaded', () => {
                 btnExecuteDeleteInst.innerText = 'Ya, Hapus Instalasi';
                 closeModal('modalDeleteInstallation');
                 pendingDeleteInstId = null;
+            }
+        });
+    }
+
+    // Form: Terbitkan Lisensi Khusus Pelanggan
+    const formIssueCustLic = document.getElementById('formIssueLicenseForCustomer');
+    if (formIssueCustLic) {
+        formIssueCustLic.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const submitBtn = formIssueCustLic.querySelector('button[type="submit"]');
+            const originalText = submitBtn.innerText;
+            submitBtn.disabled = true;
+            submitBtn.innerText = 'Menerbitkan & Menandatangani...';
+
+            const selectedModules = [];
+            document.querySelectorAll('input[name="cust_modules"]:checked').forEach(cb => {
+                selectedModules.push(cb.value);
+            });
+
+            const selectedLevels = [];
+            document.querySelectorAll('input[name="cust_levels"]:checked').forEach(cb => {
+                selectedLevels.push(cb.value);
+            });
+
+            const validFromStr = document.getElementById('custLicValidFrom').value;
+            const validUntilStr = document.getElementById('custLicValidUntil').value;
+            const instIdVal = document.getElementById('custLicInstallationId').value;
+            const customerId = document.getElementById('custLicCustomerId').value;
+
+            const payload = {
+                customer_id: customerId,
+                package_id: document.getElementById('custLicPackageId').value,
+                installation_id: instIdVal || null,
+                license_type: document.getElementById('custLicType').value,
+                valid_from: new Date(validFromStr + 'T00:00:00Z').toISOString(),
+                valid_until: new Date(validUntilStr + 'T23:59:59Z').toISOString(),
+                grace_period_days: parseInt(document.getElementById('custLicGraceDays').value, 10),
+                max_installations: parseInt(document.getElementById('custLicMaxInst').value, 10),
+                modules: selectedModules.length > 0 ? selectedModules : ['CORE', 'DATA'],
+                levels: selectedLevels.length > 0 ? selectedLevels : ['DPD', 'DPC'],
+                capacity: {
+                    max_members: parseInt(document.getElementById('custCapMembers').value, 10),
+                    max_accounts: parseInt(document.getElementById('custCapAccounts').value, 10),
+                    max_concurrent_users: parseInt(document.getElementById('custCapConcurrent').value, 10),
+                    max_storage_mb: parseInt(document.getElementById('custCapStorage').value, 10),
+                    max_gps_points_per_month: 100000
+                },
+                notes: document.getElementById('custLicNotes').value.trim() || null
+            };
+
+            try {
+                const res = await fetch('/api/v1/licenses', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': window.getCsrfToken()
+                    },
+                    credentials: 'same-origin',
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    alert('Lisensi komersial berhasil diterbitkan dan ditandatangani kriptografis!\nKunci: ' + data.license_key);
+                    window.closeModal('modalIssueLicenseForCustomer');
+                    // Refresh customer detail view and show licenses tab
+                    await window.viewCustomerDetail(customerId, 'lic');
+                } else if (res.status === 401) {
+                    alert('Sesi Anda telah berakhir. Anda akan diarahkan ke login.');
+                    window.location.href = '/login';
+                } else {
+                    alert('Gagal menerbitkan lisensi: ' + (data.detail || 'Periksa input form.'));
+                }
+            } catch (err) {
+                alert('Kesalahan jaringan: ' + err.message);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerText = originalText;
             }
         });
     }

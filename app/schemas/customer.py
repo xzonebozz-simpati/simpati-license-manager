@@ -60,6 +60,7 @@ class CustomerLicenseSummary(BaseModel):
     valid_from: datetime
     valid_until: datetime
     grace_period_days: int
+    bound_installations: List[str] = []
 
 
 class CustomerResponse(BaseModel):

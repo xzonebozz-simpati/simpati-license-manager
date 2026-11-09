@@ -26,6 +26,9 @@ def create_db_engine() -> Engine:
     if db_url.startswith("sqlite"):
         connect_args["check_same_thread"] = False
         engine_kwargs["connect_args"] = connect_args
+        if ":memory:" in db_url:
+            from sqlalchemy.pool import StaticPool
+            engine_kwargs["poolclass"] = StaticPool
     else:
         # PostgreSQL / Supabase settings
         # Ensure sslmode=require for secure cloud communication with Supabase

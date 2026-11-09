@@ -1,7 +1,267 @@
 {% extends "base.html" %}
 
-{% block title %}Pelanggan - SIMPATI License Manager{% endblock %}
-{% block header_title %}Manajemen Data Pelanggan Organisasi{% endblock %}
+{% block title %}Pelanggan - SIMPATI License Manager
+<!-- Modal 5: Terbitkan Lisensi Khusus Pelanggan -->
+<div id="modalIssueLicenseForCustomer" class="modal-overlay">
+    <div class="modal-container" style="max-width: 780px;">
+        <div class="modal-header">
+            <div class="modal-title"><span>📜</span> Terbitkan Lisensi Komersial SIMPATI 555</div>
+            <button onclick="closeModal('modalIssueLicenseForCustomer')" class="modal-close">&times;</button>
+        </div>
+        <form id="formIssueLicenseForCustomer">
+            <input type="hidden" id="custLicCustomerId">
+            <div class="modal-body">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <div class="form-group">
+                        <label class="form-label">Organisasi Pelanggan (Otomatis Terpilih)</label>
+                        <input type="text" id="custLicCustomerName" class="form-control" readonly style="background: rgba(0,0,0,0.4); color: var(--gold-light); font-weight: bold; cursor: not-allowed;">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="custLicInstallationId">Instalasi SIMPATI (Server Pelanggan)</label>
+                        <select id="custLicInstallationId" class="form-control">
+                            <option value="">-- Hubungkan Nanti / Belum Ada Server --</option>
+                        </select>
+                        <span style="font-size: 11px; color: var(--text-muted);">Pilih server milik pelanggan ini untuk langsung mengikat lisensi.</span>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <div class="form-group">
+                        <label class="form-label" for="custLicPackageId">Paket Lisensi <span style="color: #f87171;">*</span></label>
+                        <select id="custLicPackageId" class="form-control" required onchange="onCustLicensePackageChange(this.value)">
+                            <option value="">-- Pilih Paket Katalog --</option>
+                            {% if packages %}
+                                {% for p in packages %}
+                                <option value="{{ p.id }}">{{ p.package_name }} ({{ p.default_tier }})</option>
+                                {% endfor %}
+                            {% endif %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="custLicType">Tipe Lisensi <span style="color: #f87171;">*</span></label>
+                        <select id="custLicType" class="form-control">
+                            <option value="COMMERCIAL">COMMERCIAL (Resmi Standar)</option>
+                            <option value="TRIAL">TRIAL (Uji Coba)</option>
+                            <option value="GOVERNMENT">GOVERNMENT / KEMITRAAN</option>
+                            <option value="INTERNAL">INTERNAL TESTING</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <div class="form-group">
+                        <label class="form-label" for="custLicValidFrom">Mulai Berlaku <span style="color: #f87171;">*</span></label>
+                        <input type="date" id="custLicValidFrom" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="custLicValidUntil">Berlaku Sampai (Kedaluwarsa) <span style="color: #f87171;">*</span></label>
+                        <input type="date" id="custLicValidUntil" class="form-control" required>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <div class="form-group">
+                        <label class="form-label" for="custLicGraceDays">Toleransi Grace Period (Hari)</label>
+                        <input type="number" id="custLicGraceDays" class="form-control" value="7" min="0" max="60" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="custLicMaxInst">Maksimal Server Deployment</label>
+                        <input type="number" id="custLicMaxInst" class="form-control" value="1" min="1" max="10" required>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Modul Yang Diperoleh (Snapshot Entitlements) <span style="color: #f87171;">*</span></label>
+                    <div id="custLicModulesContainer" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 12px; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 6px; border: 1px solid var(--border-color);">
+                        {% if all_modules %}
+                            {% for m in all_modules %}
+                            <label style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                                <input type="checkbox" name="cust_modules" value="{{ m.module_code }}" {% if m.is_core or m.module_code in ['CORE', 'DATA', 'SURVEI_GPS'] %}checked{% endif %}>
+                                <span><strong>{{ m.module_code }}</strong> <small style="color: var(--text-muted);">({{ m.module_name }})</small></span>
+                            </label>
+                            {% endfor %}
+                        {% else %}
+                            <label><input type="checkbox" name="cust_modules" value="CORE" checked> CORE</label>
+                            <label><input type="checkbox" name="cust_modules" value="DATA" checked> DATA</label>
+                            <label><input type="checkbox" name="cust_modules" value="SURVEI_GPS" checked> SURVEI_GPS</label>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Tingkat Organisasi Tercover</label>
+                    <div style="display: flex; gap: 16px; font-size: 12px; background: rgba(0,0,0,0.3); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--border-color);">
+                        <label style="cursor: pointer;"><input type="checkbox" name="cust_levels" value="DPD" checked> DPD (Provinsi)</label>
+                        <label style="cursor: pointer;"><input type="checkbox" name="cust_levels" value="DPC" checked> DPC (Kab/Kota)</label>
+                        <label style="cursor: pointer;"><input type="checkbox" name="cust_levels" value="DPS" checked> DPS (Kecamatan)</label>
+                        <label style="cursor: pointer;"><input type="checkbox" name="cust_levels" value="DPSS" checked> DPSS (Desa/Kelurahan)</label>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px;">
+                    <div class="form-group">
+                        <label class="form-label" for="custCapMembers">Maks Anggota</label>
+                        <input type="number" id="custCapMembers" class="form-control" value="50000">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="custCapAccounts">Maks Akun</label>
+                        <input type="number" id="custCapAccounts" class="form-control" value="200">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="custCapConcurrent">Pengguna Simultan</label>
+                        <input type="number" id="custCapConcurrent" class="form-control" value="25">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="custCapStorage">Storage (MB)</label>
+                        <input type="number" id="custCapStorage" class="form-control" value="20480">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="custLicNotes">Catatan Kontrak / Lisensi</label>
+                    <input type="text" id="custLicNotes" class="form-control" placeholder="Contoh: Perjanjian Kerjasama Periode 2026/2027">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" onclick="closeModal('modalIssueLicenseForCustomer')" class="btn btn-secondary">Batal</button>
+                <button type="submit" class="btn btn-primary">Terbitkan &amp; Tandatangani Kripto (Ed25519)</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% endblock %}
+{% block header_title %}Manajemen Data Pelanggan Organisasi
+<!-- Modal 5: Terbitkan Lisensi Khusus Pelanggan -->
+<div id="modalIssueLicenseForCustomer" class="modal-overlay">
+    <div class="modal-container" style="max-width: 780px;">
+        <div class="modal-header">
+            <div class="modal-title"><span>📜</span> Terbitkan Lisensi Komersial SIMPATI 555</div>
+            <button onclick="closeModal('modalIssueLicenseForCustomer')" class="modal-close">&times;</button>
+        </div>
+        <form id="formIssueLicenseForCustomer">
+            <input type="hidden" id="custLicCustomerId">
+            <div class="modal-body">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <div class="form-group">
+                        <label class="form-label">Organisasi Pelanggan (Otomatis Terpilih)</label>
+                        <input type="text" id="custLicCustomerName" class="form-control" readonly style="background: rgba(0,0,0,0.4); color: var(--gold-light); font-weight: bold; cursor: not-allowed;">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="custLicInstallationId">Instalasi SIMPATI (Server Pelanggan)</label>
+                        <select id="custLicInstallationId" class="form-control">
+                            <option value="">-- Hubungkan Nanti / Belum Ada Server --</option>
+                        </select>
+                        <span style="font-size: 11px; color: var(--text-muted);">Pilih server milik pelanggan ini untuk langsung mengikat lisensi.</span>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <div class="form-group">
+                        <label class="form-label" for="custLicPackageId">Paket Lisensi <span style="color: #f87171;">*</span></label>
+                        <select id="custLicPackageId" class="form-control" required onchange="onCustLicensePackageChange(this.value)">
+                            <option value="">-- Pilih Paket Katalog --</option>
+                            {% if packages %}
+                                {% for p in packages %}
+                                <option value="{{ p.id }}">{{ p.package_name }} ({{ p.default_tier }})</option>
+                                {% endfor %}
+                            {% endif %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="custLicType">Tipe Lisensi <span style="color: #f87171;">*</span></label>
+                        <select id="custLicType" class="form-control">
+                            <option value="COMMERCIAL">COMMERCIAL (Resmi Standar)</option>
+                            <option value="TRIAL">TRIAL (Uji Coba)</option>
+                            <option value="GOVERNMENT">GOVERNMENT / KEMITRAAN</option>
+                            <option value="INTERNAL">INTERNAL TESTING</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <div class="form-group">
+                        <label class="form-label" for="custLicValidFrom">Mulai Berlaku <span style="color: #f87171;">*</span></label>
+                        <input type="date" id="custLicValidFrom" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="custLicValidUntil">Berlaku Sampai (Kedaluwarsa) <span style="color: #f87171;">*</span></label>
+                        <input type="date" id="custLicValidUntil" class="form-control" required>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <div class="form-group">
+                        <label class="form-label" for="custLicGraceDays">Toleransi Grace Period (Hari)</label>
+                        <input type="number" id="custLicGraceDays" class="form-control" value="7" min="0" max="60" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="custLicMaxInst">Maksimal Server Deployment</label>
+                        <input type="number" id="custLicMaxInst" class="form-control" value="1" min="1" max="10" required>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Modul Yang Diperoleh (Snapshot Entitlements) <span style="color: #f87171;">*</span></label>
+                    <div id="custLicModulesContainer" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 12px; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 6px; border: 1px solid var(--border-color);">
+                        {% if all_modules %}
+                            {% for m in all_modules %}
+                            <label style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                                <input type="checkbox" name="cust_modules" value="{{ m.module_code }}" {% if m.is_core or m.module_code in ['CORE', 'DATA', 'SURVEI_GPS'] %}checked{% endif %}>
+                                <span><strong>{{ m.module_code }}</strong> <small style="color: var(--text-muted);">({{ m.module_name }})</small></span>
+                            </label>
+                            {% endfor %}
+                        {% else %}
+                            <label><input type="checkbox" name="cust_modules" value="CORE" checked> CORE</label>
+                            <label><input type="checkbox" name="cust_modules" value="DATA" checked> DATA</label>
+                            <label><input type="checkbox" name="cust_modules" value="SURVEI_GPS" checked> SURVEI_GPS</label>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Tingkat Organisasi Tercover</label>
+                    <div style="display: flex; gap: 16px; font-size: 12px; background: rgba(0,0,0,0.3); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--border-color);">
+                        <label style="cursor: pointer;"><input type="checkbox" name="cust_levels" value="DPD" checked> DPD (Provinsi)</label>
+                        <label style="cursor: pointer;"><input type="checkbox" name="cust_levels" value="DPC" checked> DPC (Kab/Kota)</label>
+                        <label style="cursor: pointer;"><input type="checkbox" name="cust_levels" value="DPS" checked> DPS (Kecamatan)</label>
+                        <label style="cursor: pointer;"><input type="checkbox" name="cust_levels" value="DPSS" checked> DPSS (Desa/Kelurahan)</label>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px;">
+                    <div class="form-group">
+                        <label class="form-label" for="custCapMembers">Maks Anggota</label>
+                        <input type="number" id="custCapMembers" class="form-control" value="50000">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="custCapAccounts">Maks Akun</label>
+                        <input type="number" id="custCapAccounts" class="form-control" value="200">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="custCapConcurrent">Pengguna Simultan</label>
+                        <input type="number" id="custCapConcurrent" class="form-control" value="25">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="custCapStorage">Storage (MB)</label>
+                        <input type="number" id="custCapStorage" class="form-control" value="20480">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="custLicNotes">Catatan Kontrak / Lisensi</label>
+                    <input type="text" id="custLicNotes" class="form-control" placeholder="Contoh: Perjanjian Kerjasama Periode 2026/2027">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" onclick="closeModal('modalIssueLicenseForCustomer')" class="btn btn-secondary">Batal</button>
+                <button type="submit" class="btn btn-primary">Terbitkan &amp; Tandatangani Kripto (Ed25519)</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% endblock %}
 
 {% block content %}
 <div class="card">
@@ -24,7 +284,7 @@
                     <th>Telepon</th>
                     <th>Status</th>
                     <th>Terdaftar</th>
-                    <th style="text-align: center; min-width: 190px;">Aksi</th>
+                    <th style="text-align: center; min-width: 280px;">Aksi</th>
                 </tr>
             </thead>
             <tbody>
@@ -54,6 +314,14 @@
                                     title="Lihat Detail &amp; Relasi"
                                 >
                                     👁️ Detail
+                                </button>
+                                <button 
+                                    onclick="openCustomerLicenses('{{ c.id }}')" 
+                                    class="btn btn-secondary btn-sm" 
+                                    style="border-color: rgba(212, 175, 55, 0.5); color: var(--gold-light);" 
+                                    title="Lihat Paket &amp; Kelola Lisensi"
+                                >
+                                    📜 Paket &amp; Lisensi
                                 </button>
                                 <button 
                                     onclick="openEditCustomer('{{ c.id }}', '{{ c.customer_code }}', '{{ c.organization_name | e }}', '{{ c.contact_person | e }}', '{{ c.contact_email }}', '{{ c.contact_phone or '' }}', '{{ (c.address or '') | e }}', '{{ (c.notes or '') | e }}')" 
@@ -247,7 +515,7 @@
                     🖥️ Server Instalasi (<span id="tabCountInst">0</span>)
                 </button>
                 <button type="button" id="tabBtnLic" onclick="switchCustomerDetailTab('lic')" class="btn btn-secondary btn-sm">
-                    📜 Lisensi Komersial (<span id="tabCountLic">0</span>)
+                    📜 Paket &amp; Lisensi (<span id="tabCountLic">0</span>)
                 </button>
             </div>
 
@@ -272,11 +540,21 @@
 
             <!-- Tab 2: Licenses Table -->
             <div id="tabContentLic" class="table-responsive" style="display: none;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; background: rgba(0,0,0,0.3); padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border-color);">
+                    <div>
+                        <span style="font-size: 13px; font-weight: 700; color: var(--gold-light);">📜 Paket &amp; Lisensi Aktif</span>
+                        <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Daftar paket dan hak lisensi komersial untuk organisasi ini</div>
+                    </div>
+                    <button type="button" onclick="openIssueLicenseForCurrentCustomer()" class="btn btn-primary btn-sm">
+                        <span>➕</span> Terbitkan Lisensi
+                    </button>
+                </div>
                 <table class="data-table" style="font-size: 12px;">
                     <thead>
                         <tr>
                             <th>Kunci Lisensi</th>
                             <th>Paket</th>
+                            <th>Instalasi Terhubung</th>
                             <th>Tipe</th>
                             <th>Masa Berlaku</th>
                             <th>Grace (Hari)</th>
@@ -284,7 +562,7 @@
                         </tr>
                     </thead>
                     <tbody id="detailLicTbody">
-                        <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Memuat...</td></tr>
+                        <tr><td colspan="7" style="text-align: center; color: var(--text-muted);">Memuat...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -322,4 +600,134 @@
         </div>
     </div>
 </div>
+
+<!-- Modal 5: Terbitkan Lisensi Khusus Pelanggan -->
+<div id="modalIssueLicenseForCustomer" class="modal-overlay">
+    <div class="modal-container" style="max-width: 780px;">
+        <div class="modal-header">
+            <div class="modal-title"><span>📜</span> Terbitkan Lisensi Komersial SIMPATI 555</div>
+            <button onclick="closeModal('modalIssueLicenseForCustomer')" class="modal-close">&times;</button>
+        </div>
+        <form id="formIssueLicenseForCustomer">
+            <input type="hidden" id="custLicCustomerId">
+            <div class="modal-body">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <div class="form-group">
+                        <label class="form-label">Organisasi Pelanggan (Otomatis Terpilih)</label>
+                        <input type="text" id="custLicCustomerName" class="form-control" readonly style="background: rgba(0,0,0,0.4); color: var(--gold-light); font-weight: bold; cursor: not-allowed;">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="custLicInstallationId">Instalasi SIMPATI (Server Pelanggan)</label>
+                        <select id="custLicInstallationId" class="form-control">
+                            <option value="">-- Hubungkan Nanti / Belum Ada Server --</option>
+                        </select>
+                        <span style="font-size: 11px; color: var(--text-muted);">Pilih server milik pelanggan ini untuk langsung mengikat lisensi.</span>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <div class="form-group">
+                        <label class="form-label" for="custLicPackageId">Paket Lisensi <span style="color: #f87171;">*</span></label>
+                        <select id="custLicPackageId" class="form-control" required onchange="onCustLicensePackageChange(this.value)">
+                            <option value="">-- Pilih Paket Katalog --</option>
+                            {% if packages %}
+                                {% for p in packages %}
+                                <option value="{{ p.id }}">{{ p.package_name }} ({{ p.default_tier }})</option>
+                                {% endfor %}
+                            {% endif %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="custLicType">Tipe Lisensi <span style="color: #f87171;">*</span></label>
+                        <select id="custLicType" class="form-control">
+                            <option value="COMMERCIAL">COMMERCIAL (Resmi Standar)</option>
+                            <option value="TRIAL">TRIAL (Uji Coba)</option>
+                            <option value="GOVERNMENT">GOVERNMENT / KEMITRAAN</option>
+                            <option value="INTERNAL">INTERNAL TESTING</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <div class="form-group">
+                        <label class="form-label" for="custLicValidFrom">Mulai Berlaku <span style="color: #f87171;">*</span></label>
+                        <input type="date" id="custLicValidFrom" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="custLicValidUntil">Berlaku Sampai (Kedaluwarsa) <span style="color: #f87171;">*</span></label>
+                        <input type="date" id="custLicValidUntil" class="form-control" required>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <div class="form-group">
+                        <label class="form-label" for="custLicGraceDays">Toleransi Grace Period (Hari)</label>
+                        <input type="number" id="custLicGraceDays" class="form-control" value="7" min="0" max="60" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="custLicMaxInst">Maksimal Server Deployment</label>
+                        <input type="number" id="custLicMaxInst" class="form-control" value="1" min="1" max="10" required>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Modul Yang Diperoleh (Snapshot Entitlements) <span style="color: #f87171;">*</span></label>
+                    <div id="custLicModulesContainer" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 12px; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 6px; border: 1px solid var(--border-color);">
+                        {% if all_modules %}
+                            {% for m in all_modules %}
+                            <label style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                                <input type="checkbox" name="cust_modules" value="{{ m.module_code }}" {% if m.is_core or m.module_code in ['CORE', 'DATA', 'SURVEI_GPS'] %}checked{% endif %}>
+                                <span><strong>{{ m.module_code }}</strong> <small style="color: var(--text-muted);">({{ m.module_name }})</small></span>
+                            </label>
+                            {% endfor %}
+                        {% else %}
+                            <label><input type="checkbox" name="cust_modules" value="CORE" checked> CORE</label>
+                            <label><input type="checkbox" name="cust_modules" value="DATA" checked> DATA</label>
+                            <label><input type="checkbox" name="cust_modules" value="SURVEI_GPS" checked> SURVEI_GPS</label>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Tingkat Organisasi Tercover</label>
+                    <div style="display: flex; gap: 16px; font-size: 12px; background: rgba(0,0,0,0.3); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--border-color);">
+                        <label style="cursor: pointer;"><input type="checkbox" name="cust_levels" value="DPD" checked> DPD (Provinsi)</label>
+                        <label style="cursor: pointer;"><input type="checkbox" name="cust_levels" value="DPC" checked> DPC (Kab/Kota)</label>
+                        <label style="cursor: pointer;"><input type="checkbox" name="cust_levels" value="DPS" checked> DPS (Kecamatan)</label>
+                        <label style="cursor: pointer;"><input type="checkbox" name="cust_levels" value="DPSS" checked> DPSS (Desa/Kelurahan)</label>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px;">
+                    <div class="form-group">
+                        <label class="form-label" for="custCapMembers">Maks Anggota</label>
+                        <input type="number" id="custCapMembers" class="form-control" value="50000">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="custCapAccounts">Maks Akun</label>
+                        <input type="number" id="custCapAccounts" class="form-control" value="200">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="custCapConcurrent">Pengguna Simultan</label>
+                        <input type="number" id="custCapConcurrent" class="form-control" value="25">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="custCapStorage">Storage (MB)</label>
+                        <input type="number" id="custCapStorage" class="form-control" value="20480">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="custLicNotes">Catatan Kontrak / Lisensi</label>
+                    <input type="text" id="custLicNotes" class="form-control" placeholder="Contoh: Perjanjian Kerjasama Periode 2026/2027">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" onclick="closeModal('modalIssueLicenseForCustomer')" class="btn btn-secondary">Batal</button>
+                <button type="submit" class="btn btn-primary">Terbitkan &amp; Tandatangani Kripto (Ed25519)</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 {% endblock %}

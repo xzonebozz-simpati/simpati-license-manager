@@ -49,7 +49,15 @@ def setup_test_database():
             role="SUPERADMIN",
             is_active=True
         )
-        db.add(admin)
+        superadmin = LicenseUser(
+            username="superadmin",
+            email="superadmin@simpati555.id",
+            full_name="SIMPATI License Superadmin",
+            password_hash=hash_password("SuperAdmin@2026!"),
+            role="SUPERADMIN",
+            is_active=True
+        )
+        db.add_all([admin, superadmin])
 
         # Basic Modules Registry
         modules = [
