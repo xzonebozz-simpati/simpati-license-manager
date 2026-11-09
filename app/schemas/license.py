@@ -89,8 +89,8 @@ class LicenseValidationRequest(BaseModel):
     """Periodic validation request from an installation."""
     license_key: str
     installation_code: str
-    nonce: str
-    timestamp: datetime
+    nonce: Optional[str] = None
+    timestamp: Optional[datetime] = None
     installation_signature: Optional[str] = None
 
 

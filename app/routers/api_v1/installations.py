@@ -33,7 +33,7 @@ from app.services.installation_service import (
     rotate_installation_credentials,
     generate_enrollment_config,
 )
-from app.security.dependencies import require_authenticated_user
+from app.security.dependencies import require_authenticated_user, require_installation_auth
 
 router = APIRouter(prefix="/api/v1/installations", tags=["Installations"])
 
@@ -268,23 +268,19 @@ def heartbeat_endpoint(
     payload: InstallationHeartbeat,
     request: Request,
     db: Session = Depends(get_db),
+    auth_installation: Installation = Depends(require_installation_auth),
 ):
     """
     Public telemetry ping endpoint used by remote SIMPATI 555 servers.
     Verifies that the installation code exists and records telemetry metrics.
     """
-    inst = get_installation_by_code(db, payload.installation_code)
-    if not inst:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Instalasi dengan kode '{payload.installation_code}' tidak terdaftar.",
-        )
-
-    if inst.status != "ACTIVE":
+    if payload.installation_code != auth_installation.installation_code:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Instalasi berstatus '{inst.status}'. Ping ditolak.",
+            detail=f"Kode instalasi '{payload.installation_code}' tidak cocok dengan identitas kredensial terotentikasi.",
         )
+
+    inst = auth_installation
 
     client_ip = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent")

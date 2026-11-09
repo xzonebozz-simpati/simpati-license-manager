@@ -104,3 +104,69 @@ def get_or_create_csrf_token(request: Request) -> str:
     if not token:
         token = generate_csrf_token()
     return token
+
+
+# ---------------------------------------------------------------------------
+# M2M Installation Authentication (HTTP Basic)
+# ---------------------------------------------------------------------------
+
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from app.models.installation import Installation, InstallationCredential
+from app.security.hashing import verify_password
+
+basic_scheme = HTTPBasic(auto_error=False)
+
+
+def require_installation_auth(
+    credentials: Optional[HTTPBasicCredentials] = Depends(basic_scheme),
+    db: Session = Depends(get_db)
+) -> Installation:
+    """
+    Enforces M2M HTTP Basic Authentication for installation requests.
+    Validates client_id and client_secret against active installation_credentials using Argon2id.
+    Returns the authenticated Installation ORM object.
+    """
+    if not credentials or not credentials.username or not credentials.password:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Autentikasi instalasi M2M diperlukan (HTTP Basic Auth).",
+            headers={"WWW-Authenticate": "Basic"}
+        )
+
+    client_id = credentials.username.strip()
+    client_secret = credentials.password
+
+    # Query active credential matching client_id
+    cred = (
+        db.query(InstallationCredential)
+        .filter(
+            InstallationCredential.client_id == client_id,
+            InstallationCredential.is_active == True,
+            InstallationCredential.revoked_at.is_(None)
+        )
+        .first()
+    )
+
+    if not cred or not verify_password(client_secret, cred.client_secret_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Kredensial instalasi (Client ID / Client Secret) tidak valid atau telah dicabut.",
+            headers={"WWW-Authenticate": "Basic"}
+        )
+
+    installation = (
+        db.query(Installation)
+        .filter(
+            Installation.id == cred.installation_id,
+            Installation.status == "ACTIVE"
+        )
+        .first()
+    )
+
+    if not installation:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Instalasi yang terikat dengan kredensial ini tidak aktif atau tidak ditemukan."
+        )
+
+    return installation

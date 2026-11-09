@@ -1,9 +1,11 @@
 """Periodic license validation endpoints called by SIMPATI instances."""
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database.session import get_db
+from app.models.installation import Installation
 from app.schemas.license import LicenseValidationRequest
+from app.security.dependencies import require_installation_auth
 from app.services.validation_service import validate_installation_license
 
 router = APIRouter(prefix="/api/v1/validations", tags=["Validations"])
@@ -13,12 +15,21 @@ router = APIRouter(prefix="/api/v1/validations", tags=["Validations"])
 def verify_license(
     payload: LicenseValidationRequest,
     request: Request,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    auth_installation: Installation = Depends(require_installation_auth)
 ):
     """Processes validation request sent from a SIMPATI 555 instance.
 
-    Evaluates license validity, grace period, and Restricted Mode rules.
+    Enforces M2M HTTP Basic Authentication with Client ID and Client Secret.
+    Verifies installation identity, license binding, Ed25519 digital signature,
+    and Restricted Mode rules.
     """
+    if payload.installation_code != auth_installation.installation_code:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Kode instalasi '{payload.installation_code}' tidak cocok dengan identitas kredensial terotentikasi."
+        )
+
     client_ip = request.client.host if request.client else "127.0.0.1"
     result = validate_installation_license(
         db=db,

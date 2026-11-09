@@ -224,7 +224,12 @@ def test_installation_heartbeat_telemetry(client: TestClient, auth_headers, samp
     inst_code = inst_data["installation_code"]
     inst_id = inst_data["id"]
 
-    # Heartbeat is an exempt M2M endpoint (no CSRF or session cookies needed)
+    # Heartbeat is an exempt M2M endpoint authenticated via HTTP Basic Auth
+    import base64
+    client_id = inst_data["client_id"]
+    client_secret = inst_data["client_secret"]
+    m2m_auth = "Basic " + base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+
     hb_payload = {
         "installation_code": inst_code,
         "current_version": "555.2.4",
@@ -232,7 +237,11 @@ def test_installation_heartbeat_telemetry(client: TestClient, auth_headers, samp
         "total_members_recorded": 1250,
         "status_summary": "OPTIMAL"
     }
-    hb_resp = client.post("/api/v1/installations/heartbeat", json=hb_payload)
+    hb_resp = client.post(
+        "/api/v1/installations/heartbeat",
+        json=hb_payload,
+        headers={"Authorization": m2m_auth}
+    )
     assert hb_resp.status_code == 200
     assert hb_resp.json()["status"] == "ACKNOWLEDGED"
 

@@ -114,8 +114,19 @@ def test_license_issuance_and_validation(db_session):
         levels=["DPD", "DPC"],
         capacity=LicenseCapacityInput(max_members=25000, max_accounts=100)
     )
+    from app.models.license import LicenseInstallation
     license_obj = issue_license(db=db_session, data=lic_data)
     assert license_obj.license_key.startswith("SMP-LIC-")
+
+    # Create required LicenseInstallation binding before calling validate_installation_license.
+    # The new validation_service requires an explicit binding record (license_installations table).
+    binding = LicenseInstallation(
+        license_id=license_obj.id,
+        installation_id=inst.id,
+        is_active=True
+    )
+    db_session.add(binding)
+    db_session.commit()
 
     # Validate online
     val_result = validate_installation_license(
