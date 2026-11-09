@@ -7,6 +7,8 @@ from fastapi import FastAPI, Request, status
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, JSONResponse
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
 from app.config import get_settings
 from app.database.connection import engine
 from app.models.base import Base
@@ -53,6 +55,12 @@ def create_application() -> FastAPI:
         lifespan=lifespan,
         docs_url="/docs",
         redoc_url="/redoc"
+    )
+
+    # Reverse Proxy Headers Middleware (Essential for Hostless / Cloudflare SSL termination)
+    app.add_middleware(
+        ProxyHeadersMiddleware,
+        trusted_hosts=settings.FORWARDED_ALLOW_IPS
     )
 
     # CORS Middleware

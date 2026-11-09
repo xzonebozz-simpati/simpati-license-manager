@@ -19,27 +19,30 @@ from app.models.installation import Installation
 from app.models.license import License, LicenseCapacity
 from app.models.region import Region
 from app.models.security import SigningKey
+from app.config import get_settings
 from app.models.operations import SystemSetting, LicenseAuditLog
 from app.security.hashing import hash_password
 from app.security.crypto import generate_ed25519_keypair
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("simpati.scripts.init_db")
+settings = get_settings()
 
 
 def seed_initial_data():
     """Seeds default modules, packages, administrative user, and settings if not present."""
     db = SessionLocal()
     try:
-        # 1. Superadmin User
-        superadmin = db.query(LicenseUser).filter(LicenseUser.username == "superadmin").first()
+        # 1. Superadmin User (Configurable via Environment Variables for Staging/Production)
+        admin_uname = settings.ADMIN_USERNAME
+        superadmin = db.query(LicenseUser).filter(LicenseUser.username == admin_uname).first()
         if not superadmin:
-            logger.info("Membuat akun default License Superadmin...")
+            logger.info(f"Membuat akun default License Superadmin ({admin_uname})...")
             superadmin = LicenseUser(
-                username="superadmin",
-                email="superadmin@simpati555.id",
-                full_name="SIMPATI License Superadmin",
-                password_hash=hash_password("SuperAdmin@2026!"),
+                username=admin_uname,
+                email=settings.ADMIN_EMAIL,
+                full_name=settings.ADMIN_FULL_NAME,
+                password_hash=hash_password(settings.ADMIN_PASSWORD),
                 role="SUPERADMIN",
                 is_active=True
             )

@@ -47,9 +47,38 @@ def generate_license_key() -> str:
 
 def get_or_load_root_signing_keys() -> Tuple[str, str]:
     """
-    Loads root Ed25519 private and public keys from vault file or creates fallback.
+    Loads root Ed25519 keys prioritizing environment variables (12-factor cloud deployment),
+    falling back to file vault, or generating a fresh keypair for development.
     Returns: (private_key_pem, public_key_pem)
     """
+    # 1. Environment Variable / Cloud Secret Storage (Recommended for Hostless)
+    if settings.ED25519_PRIVATE_KEY_PEM:
+        try:
+            priv_pem = settings.ED25519_PRIVATE_KEY_PEM.strip()
+            # Normalize escaped newlines from environment strings
+            if "\\n" in priv_pem and "\n" not in priv_pem:
+                priv_pem = priv_pem.replace("\\n", "\n")
+
+            if settings.ED25519_PUBLIC_KEY_PEM:
+                pub_pem = settings.ED25519_PUBLIC_KEY_PEM.strip()
+                if "\\n" in pub_pem and "\n" not in pub_pem:
+                    pub_pem = pub_pem.replace("\\n", "\n")
+                return priv_pem, pub_pem
+
+            # Derive public key directly from private key PEM
+            from cryptography.hazmat.primitives import serialization
+            priv_obj = serialization.load_pem_private_key(priv_pem.encode("utf-8"), password=None)
+            pub_obj = priv_obj.public_key()
+            pub_pem = pub_obj.public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo
+            ).decode("utf-8").strip()
+            return priv_pem, pub_pem
+        except Exception as exc:
+            import logging
+            logging.getLogger("simpati.license_service").error(f"Gagal memuat Ed25519 key dari environment: {exc}")
+
+    # 2. Local File Vault Storage
     vault_path = Path(settings.SIGNING_KEY_VAULT_PATH)
     pub_path = vault_path.with_suffix(".pub")
 
@@ -61,8 +90,12 @@ def get_or_load_root_signing_keys() -> Tuple[str, str]:
         except Exception:
             pass
 
-    # Generate and persist new keys if absent
-    vault_path.parent.mkdir(parents=True, exist_ok=True)
+    # 3. Fallback: Generate and persist new keys if absent (development only)
+    try:
+        vault_path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+
     priv_pem, pub_pem = generate_ed25519_keypair()
     try:
         vault_path.write_text(priv_pem, encoding="utf-8")

@@ -1,12 +1,13 @@
 """Configuration module for SIMPATI License Manager.
 
 Loads environment variables, validates configurations, and provides
-centralized application settings.
+centralized application settings for Local, Staging, and Production (Hostless + Supabase).
 """
 
+import os
 from functools import lru_cache
-from typing import List
-from pydantic import Field
+from typing import List, Optional
+from pydantic import Field, AliasChoices
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,13 +21,17 @@ class Settings(BaseSettings):
         extra="ignore"
     )
 
-    # General App Settings
+    # General App Settings & Port Binding
     APP_ENV: str = "development"
     APP_NAME: str = "SIMPATI License Manager"
     APP_VERSION: str = "1.0.0"
-    APP_DEBUG: bool = True
+    APP_DEBUG: bool = False
     APP_HOST: str = "0.0.0.0"
-    APP_PORT: int = 8000
+    APP_PORT: int = Field(
+        default=8000,
+        validation_alias=AliasChoices("PORT", "APP_PORT"),
+        description="Application listening port (automatically set by Hostless via PORT)"
+    )
 
     # Security & Tokens
     SECRET_KEY: str = Field(
@@ -35,8 +40,9 @@ class Settings(BaseSettings):
     )
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
+    COOKIE_SECURE: Optional[bool] = None
 
-    # Dedicated PostgreSQL Database Configuration
+    # Dedicated PostgreSQL Database Configuration (Supabase compatible)
     DB_HOST: str = "localhost"
     DB_PORT: int = 5432
     DB_USER: str = "postgres"
@@ -44,25 +50,50 @@ class Settings(BaseSettings):
     DB_NAME: str = "simpati_license_db"
     DATABASE_URL: str = Field(
         default="sqlite:///./simpati_license.db",
-        description="SQLAlchemy Database URL (PostgreSQL for Production, SQLite for Local Testing)"
+        description="SQLAlchemy Database URL (PostgreSQL Supabase URL for Staging/Production, SQLite for Local Testing)"
     )
 
-    DB_POOL_SIZE: int = 10
-    DB_MAX_OVERFLOW: int = 20
+    # Database Connection Pool Settings
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 10
     DB_POOL_TIMEOUT: int = 30
-    DB_POOL_RECYCLE: int = 1800
+    DB_POOL_RECYCLE: int = 300  # Supabase idle timeout protection (5 minutes)
 
     # License Business Rules
     DEFAULT_GRACE_PERIOD_DAYS: int = 7
     TOKEN_VALIDATION_INTERVAL_HOURS: int = 24
     ALLOW_RESTRICTED_MODE: bool = True
 
-    # Cryptographic Signing Keys
+    # Cryptographic Signing Keys (Ed25519)
+    # Environment variable has priority over filesystem path (ideal for 12-factor cloud deployment)
+    ED25519_PRIVATE_KEY_PEM: Optional[str] = Field(
+        default=None,
+        description="Root Ed25519 Private Key in PEM format (read from cloud secrets)"
+    )
+    ED25519_PUBLIC_KEY_PEM: Optional[str] = Field(
+        default=None,
+        description="Root Ed25519 Public Key in PEM format (optional, derived automatically if omitted)"
+    )
     SIGNING_KEY_VAULT_PATH: str = "secrets/keys/simpati_ed25519_root.key"
     SIGNING_KEY_IDENTIFIER: str = "KEY-SIMPATI-ROOT-V1"
 
-    # CORS
+    # Default Superadmin Account Initializer
+    ADMIN_USERNAME: str = Field(default="superadmin", description="Initial Superadmin username")
+    ADMIN_PASSWORD: str = Field(default="SuperAdmin@2026!", description="Initial Superadmin password")
+    ADMIN_EMAIL: str = Field(default="superadmin@simpati555.id", description="Initial Superadmin email")
+    ADMIN_FULL_NAME: str = Field(default="SIMPATI License Superadmin", description="Superadmin full name")
+
+    # Reverse Proxy & Cloud Networking
+    FORWARDED_ALLOW_IPS: str = Field(default="*", description="Trusted reverse proxy IP list for Hostless")
     CORS_ORIGINS: str = "http://localhost:8000,http://127.0.0.1:8000"
+
+    @property
+    def normalized_database_url(self) -> str:
+        """Normalizes DATABASE_URL for SQLAlchemy 2.0 (converts postgres:// to postgresql://)."""
+        url = self.DATABASE_URL.strip()
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql://", 1)
+        return url
 
     @property
     def cors_origins_list(self) -> List[str]:
@@ -71,8 +102,15 @@ class Settings(BaseSettings):
 
     @property
     def is_production(self) -> bool:
-        """Check if running in production mode."""
-        return self.APP_ENV.lower() == "production"
+        """Check if running in staging or production mode."""
+        return self.APP_ENV.lower() in ("production", "staging")
+
+    @property
+    def effective_cookie_secure(self) -> bool:
+        """Cookie secure flag: True on production/staging HTTPS, False on local dev."""
+        if self.COOKIE_SECURE is not None:
+            return self.COOKIE_SECURE
+        return self.is_production
 
 
 @lru_cache()

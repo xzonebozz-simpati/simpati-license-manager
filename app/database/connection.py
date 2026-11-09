@@ -1,4 +1,8 @@
-"""Database engine and connectivity check module."""
+"""Database engine and connectivity check module.
+
+Optimized for Supabase PostgreSQL (direct connection or PgBouncer transaction pooler)
+as well as SQLite for local test suites.
+"""
 
 import time
 from typing import Dict, Any
@@ -8,11 +12,12 @@ from app.config import get_settings
 
 settings = get_settings()
 
+
 def create_db_engine() -> Engine:
     """Creates and configures the SQLAlchemy engine based on configuration."""
-    db_url = settings.DATABASE_URL
+    db_url = settings.normalized_database_url
 
-    connect_args = {}
+    connect_args: Dict[str, Any] = {}
     engine_kwargs: Dict[str, Any] = {
         "pool_pre_ping": True,
         "echo": False,
@@ -22,7 +27,12 @@ def create_db_engine() -> Engine:
         connect_args["check_same_thread"] = False
         engine_kwargs["connect_args"] = connect_args
     else:
-        # PostgreSQL / Production settings
+        # PostgreSQL / Supabase settings
+        # Ensure sslmode=require for secure cloud communication with Supabase
+        if "sslmode" not in db_url.lower():
+            connect_args["sslmode"] = "require"
+
+        engine_kwargs["connect_args"] = connect_args
         engine_kwargs.update({
             "pool_size": settings.DB_POOL_SIZE,
             "max_overflow": settings.DB_MAX_OVERFLOW,
