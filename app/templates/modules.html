@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}Modul - SIMPATI License Manager{% endblock %}
+{% block header_title %}Registry Modul Aplikasi SIMPATI 555{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">
+            <span>🧩</span> Master Registry Modul Aplikasi
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Kode Modul</th>
+                    <th>Nama Modul</th>
+                    <th>Sifat</th>
+                    <th>Deskripsi</th>
+                    <th>Prasyarat (Dependencies)</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if modules %}
+                    {% for m in modules %}
+                    <tr>
+                        <td class="font-mono"><strong>{{ m.module_code }}</strong></td>
+                        <td><strong style="color: var(--gold-light);">{{ m.module_name }}</strong></td>
+                        <td>
+                            {% if m.is_core %}
+                                <span class="badge badge-gold">CORE (WAJIB)</span>
+                            {% else %}
+                                <span class="badge badge-active">OPSIONAL</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ m.description or '-' }}</td>
+                        <td>
+                            {% for dep in m.dependencies %}
+                                <span class="badge badge-gold" style="font-size: 10px;">{{ dep.required_module.module_code }}</span>
+                            {% else %}
+                                <span style="color: var(--text-muted); font-size: 11px;">Mandiri</span>
+                            {% endfor %}
+                        </td>
+                        <td>
+                            {% if m.is_active %}
+                                <span class="badge badge-active">AKTIF</span>
+                            {% else %}
+                                <span class="badge badge-revoked">NON-AKTIF</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="6" style="text-align: center; padding: 32px; color: var(--text-muted);">
+                            Belum ada modul terdaftar dalam registry.
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

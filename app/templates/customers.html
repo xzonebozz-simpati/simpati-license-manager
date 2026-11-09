@@ -1,0 +1,325 @@
+{% extends "base.html" %}
+
+{% block title %}Pelanggan - SIMPATI License Manager{% endblock %}
+{% block header_title %}Manajemen Data Pelanggan Organisasi{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">
+            <span>🏢</span> Daftar Pelanggan SIMPATI
+        </div>
+        <button onclick="openModal('modalNewCustomer')" class="btn btn-primary">
+            <span>➕</span> Tambah Pelanggan Baru
+        </button>
+    </div>
+    <div class="table-responsive">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Kode Pelanggan</th>
+                    <th>Nama Organisasi</th>
+                    <th>Penanggung Jawab</th>
+                    <th>Email</th>
+                    <th>Telepon</th>
+                    <th>Status</th>
+                    <th>Terdaftar</th>
+                    <th style="text-align: center; min-width: 190px;">Aksi</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if customers %}
+                    {% for c in customers %}
+                    <tr id="row-cust-{{ c.id }}">
+                        <td class="font-mono"><strong>{{ c.customer_code }}</strong></td>
+                        <td><strong style="color: var(--gold-light);">{{ c.organization_name }}</strong></td>
+                        <td>{{ c.contact_person }}</td>
+                        <td>{{ c.contact_email }}</td>
+                        <td>{{ c.contact_phone or '-' }}</td>
+                        <td>
+                            {% if c.status == 'ACTIVE' %}
+                                <span class="badge badge-active">&bull; AKTIF</span>
+                            {% elif c.status == 'SUSPENDED' %}
+                                <span class="badge badge-restricted">&bull; SUSPENDED</span>
+                            {% else %}
+                                <span class="badge badge-revoked">&bull; {{ c.status }}</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ c.created_at.strftime('%d-%m-%Y') }}</td>
+                        <td style="text-align: center;">
+                            <div style="display: inline-flex; gap: 6px; justify-content: center;">
+                                <button 
+                                    onclick="viewCustomerDetail('{{ c.id }}')" 
+                                    class="btn btn-secondary btn-sm" 
+                                    title="Lihat Detail &amp; Relasi"
+                                >
+                                    👁️ Detail
+                                </button>
+                                <button 
+                                    onclick="openEditCustomer('{{ c.id }}', '{{ c.customer_code }}', '{{ c.organization_name | e }}', '{{ c.contact_person | e }}', '{{ c.contact_email }}', '{{ c.contact_phone or '' }}', '{{ (c.address or '') | e }}', '{{ (c.notes or '') | e }}')" 
+                                    class="btn btn-secondary btn-sm" 
+                                    title="Edit Informasi Pelanggan"
+                                >
+                                    ✏️ Edit
+                                </button>
+                                {% if c.status == 'ACTIVE' %}
+                                <button 
+                                    onclick="toggleCustomerStatus('{{ c.id }}', 'SUSPENDED')" 
+                                    class="btn btn-secondary btn-sm" 
+                                    style="border-color: rgba(239, 68, 68, 0.4); color: #f87171;" 
+                                    title="Nonaktifkan Pelanggan (Suspend)"
+                                >
+                                    ⛔ Suspend
+                                </button>
+                                {% else %}
+                                <button 
+                                    onclick="toggleCustomerStatus('{{ c.id }}', 'ACTIVE')" 
+                                    class="btn btn-secondary btn-sm" 
+                                    style="border-color: rgba(16, 185, 129, 0.4); color: #34d399;" 
+                                    title="Aktifkan Kembali Pelanggan"
+                                >
+                                    ✅ Aktifkan
+                                </button>
+                                {% endif %}
+                                <button 
+                                    onclick="confirmDeleteCustomer('{{ c.id }}', '{{ c.organization_name | e }}')" 
+                                    class="btn btn-secondary btn-sm" 
+                                    style="border-color: rgba(239, 68, 68, 0.6); color: #f87171;" 
+                                    title="Hapus Pelanggan (Cek Relasi)"
+                                >
+                                    🗑️
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="8" style="text-align: center; padding: 32px; color: var(--text-muted);">
+                            Belum ada pelanggan terdaftar.
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal 1: Tambah Pelanggan -->
+<div id="modalNewCustomer" class="modal-overlay">
+    <div class="modal-container">
+        <div class="modal-header">
+            <div class="modal-title">Tambah Pelanggan SIMPATI Baru</div>
+            <button onclick="closeModal('modalNewCustomer')" class="modal-close">&times;</button>
+        </div>
+        <form id="formNewCustomer">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label" for="custCode">Kode Pelanggan (Unik)</label>
+                    <input type="text" id="custCode" class="form-control" placeholder="Contoh: CUST-2026-DPD-JABAR" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="custOrgName">Nama Organisasi</label>
+                    <input type="text" id="custOrgName" class="form-control" placeholder="Contoh: DPD SIMPATI Jawa Barat" required>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div class="form-group">
+                        <label class="form-label" for="custPerson">Penanggung Jawab</label>
+                        <input type="text" id="custPerson" class="form-control" placeholder="Contoh: Ir. Budi Santoso" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="custEmail">Email Resmi</label>
+                        <input type="email" id="custEmail" class="form-control" placeholder="budi@simpatidpd.id" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="custPhone">Nomor Kontak / WhatsApp</label>
+                    <input type="text" id="custPhone" class="form-control" placeholder="+62 812-3456-7890">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="custAddress">Alamat Kantor</label>
+                    <textarea id="custAddress" class="form-control" rows="2" placeholder="Jl. Raya Utama No. 555"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="custNotes">Catatan Internal</label>
+                    <input type="text" id="custNotes" class="form-control" placeholder="Catatan perjanjian lisensi">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" onclick="closeModal('modalNewCustomer')" class="btn btn-secondary">Batal</button>
+                <button type="submit" class="btn btn-primary">Simpan Pelanggan</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal 2: Edit Data Pelanggan -->
+<div id="modalEditCustomer" class="modal-overlay">
+    <div class="modal-container">
+        <div class="modal-header">
+            <div class="modal-title">Edit Data Pelanggan</div>
+            <button onclick="closeModal('modalEditCustomer')" class="modal-close">&times;</button>
+        </div>
+        <form id="formEditCustomer">
+            <input type="hidden" id="editCustId">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">Kode Pelanggan (Tidak Dapat Diubah)</label>
+                    <input type="text" id="editCustCode" class="form-control font-mono" readonly style="opacity: 0.7;">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="editCustOrgName">Nama Organisasi</label>
+                    <input type="text" id="editCustOrgName" class="form-control" required>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div class="form-group">
+                        <label class="form-label" for="editCustPerson">Penanggung Jawab</label>
+                        <input type="text" id="editCustPerson" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="editCustEmail">Email Resmi</label>
+                        <input type="email" id="editCustEmail" class="form-control" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="editCustPhone">Nomor Kontak / WhatsApp</label>
+                    <input type="text" id="editCustPhone" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="editCustAddress">Alamat Kantor</label>
+                    <textarea id="editCustAddress" class="form-control" rows="2"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="editCustNotes">Catatan Internal</label>
+                    <input type="text" id="editCustNotes" class="form-control">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" onclick="closeModal('modalEditCustomer')" class="btn btn-secondary">Batal</button>
+                <button type="submit" class="btn btn-primary">Simpan Perubahan</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal 3: Detail Lengkap & Relasi Pelanggan -->
+<div id="modalCustomerDetail" class="modal-overlay">
+    <div class="modal-container" style="max-width: 820px;">
+        <div class="modal-header">
+            <div class="modal-title" id="detailModalTitle">Detail Organisasi Pelanggan</div>
+            <button onclick="closeModal('modalCustomerDetail')" class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body" style="padding: 20px;">
+            <!-- Metrics Row -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 20px;">
+                <div style="background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px; text-align: center;">
+                    <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Status Pelanggan</div>
+                    <div id="detailStatusBadge" style="margin-top: 4px;"></div>
+                </div>
+                <div style="background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px; text-align: center;">
+                    <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Server Instalasi</div>
+                    <div id="detailTotalInst" style="font-size: 20px; font-weight: 800; color: var(--gold-light);">0</div>
+                </div>
+                <div style="background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px; text-align: center;">
+                    <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Lisensi Komersial</div>
+                    <div id="detailTotalLic" style="font-size: 20px; font-weight: 800; color: var(--gold-light);">0</div>
+                </div>
+            </div>
+
+            <!-- Profile Info Card -->
+            <div style="background: rgba(42, 5, 13, 0.25); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; margin-bottom: 20px; font-size: 13px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <div><span style="color: var(--text-muted);">Kode:</span> <strong id="detailCode" class="font-mono"></strong></div>
+                    <div><span style="color: var(--text-muted);">Organisasi:</span> <strong id="detailOrg"></strong></div>
+                    <div><span style="color: var(--text-muted);">Penanggung Jawab:</span> <span id="detailPerson"></span></div>
+                    <div><span style="color: var(--text-muted);">Email:</span> <span id="detailEmail"></span></div>
+                    <div><span style="color: var(--text-muted);">Kontak:</span> <span id="detailPhone"></span></div>
+                    <div><span style="color: var(--text-muted);">Terdaftar:</span> <span id="detailCreatedAt"></span></div>
+                </div>
+                <div style="margin-top: 8px; border-top: 1px solid rgba(212, 175, 55, 0.1); padding-top: 8px;">
+                    <span style="color: var(--text-muted);">Alamat:</span> <span id="detailAddress"></span>
+                </div>
+            </div>
+
+            <!-- Tab Buttons -->
+            <div style="display: flex; gap: 8px; margin-bottom: 14px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">
+                <button type="button" id="tabBtnInst" onclick="switchCustomerDetailTab('inst')" class="btn btn-secondary btn-sm" style="background: var(--maroon-primary); border-color: var(--gold-primary);">
+                    🖥️ Server Instalasi (<span id="tabCountInst">0</span>)
+                </button>
+                <button type="button" id="tabBtnLic" onclick="switchCustomerDetailTab('lic')" class="btn btn-secondary btn-sm">
+                    📜 Lisensi Komersial (<span id="tabCountLic">0</span>)
+                </button>
+            </div>
+
+            <!-- Tab 1: Installations Table -->
+            <div id="tabContentInst" class="table-responsive">
+                <table class="data-table" style="font-size: 12px;">
+                    <thead>
+                        <tr>
+                            <th>Kode Instalasi</th>
+                            <th>Nama Server</th>
+                            <th>Domain</th>
+                            <th>IP</th>
+                            <th>Environment</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="detailInstTbody">
+                        <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Memuat...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Tab 2: Licenses Table -->
+            <div id="tabContentLic" class="table-responsive" style="display: none;">
+                <table class="data-table" style="font-size: 12px;">
+                    <thead>
+                        <tr>
+                            <th>Kunci Lisensi</th>
+                            <th>Paket</th>
+                            <th>Tipe</th>
+                            <th>Masa Berlaku</th>
+                            <th>Grace (Hari)</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="detailLicTbody">
+                        <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Memuat...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" onclick="closeModal('modalCustomerDetail')" class="btn btn-secondary">Tutup</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal 4: Konfirmasi Hapus Pelanggan Aman -->
+<div id="modalDeleteCustomerConfirm" class="modal-overlay">
+    <div class="modal-container" style="max-width: 480px;">
+        <div class="modal-header" style="background: linear-gradient(135deg, #5b0e1b 0%, #2b040a 100%);">
+            <div class="modal-title">Konfirmasi Penghapusan Pelanggan</div>
+            <button onclick="closeModal('modalDeleteCustomerConfirm')" class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="alert-box alert-warning">
+                <span>⚠️</span>
+                <span>Pemeriksaan Relasi Aktif: Sistem menolak penghapusan jika pelanggan memiliki lisensi atau instalasi server.</span>
+            </div>
+            <p style="font-size: 13px; color: var(--text-main); margin-bottom: 12px;">
+                Apakah Anda yakin ingin menghapus data organisasi pelanggan:
+            </p>
+            <div style="background: rgba(0,0,0,0.4); padding: 12px; border-radius: 6px; border: 1px solid var(--border-color); text-align: center;">
+                <strong id="deleteTargetOrgName" style="color: var(--gold-light); font-size: 15px;"></strong>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" onclick="closeModal('modalDeleteCustomerConfirm')" class="btn btn-secondary">Batal</button>
+            <button type="button" id="btnExecuteDeleteCustomer" class="btn btn-secondary" style="background: #991b1b; border-color: #ef4444; color: #fff;">
+                Ya, Hapus Pelanggan
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}

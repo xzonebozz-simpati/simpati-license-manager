@@ -1,0 +1,379 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - SIMPATI License Manager{% endblock %}
+{% block header_title %}Ringkasan Operasional Lisensi SIMPATI 555{% endblock %}
+
+{% block content %}
+<!-- Metrics Grid -->
+<div class="metrics-grid">
+    <div class="metric-card">
+        <div class="metric-header">
+            <span class="metric-title">Pelanggan Terdaftar</span>
+            <div class="metric-icon">🏢</div>
+        </div>
+        <div class="metric-value">{{ stats.total_customers }}</div>
+        <div class="metric-desc">Organisasi Pengguna SIMPATI</div>
+    </div>
+
+    <div class="metric-card">
+        <div class="metric-header">
+            <span class="metric-title">Instalasi Terhubung</span>
+            <div class="metric-icon">🖥️</div>
+        </div>
+        <div class="metric-value">{{ stats.total_installations }}</div>
+        <div class="metric-desc">Server Deployment Aktif</div>
+    </div>
+
+    <div class="metric-card">
+        <div class="metric-header">
+            <span class="metric-title">Lisensi Komersial</span>
+            <div class="metric-icon">📜</div>
+        </div>
+        <div class="metric-value">{{ stats.active_licenses }}</div>
+        <div class="metric-desc">Lisensi Berstatus Aktif</div>
+    </div>
+
+    <div class="metric-card">
+        <div class="metric-header">
+            <span class="metric-title">Validasi Berhasil</span>
+            <div class="metric-icon">🛡️</div>
+        </div>
+        <div class="metric-value">{{ stats.total_validations }}</div>
+        <div class="metric-desc">Pemeriksaan Berkala Online</div>
+    </div>
+</div>
+
+<!-- Quick Action Toolbar -->
+<div class="card" style="margin-bottom: 24px;">
+    <div class="card-body" style="padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+        <div>
+            <strong style="color: var(--gold-light);">Aksi Cepat Superadmin:</strong>
+            <span style="color: var(--text-muted); font-size: 13px; margin-left: 8px;">Kelola penerbitan hak cipta dan validasi SIMPATI</span>
+        </div>
+        <div style="display: flex; gap: 10px;">
+            <button onclick="openModal('modalNewLicense')" class="btn btn-primary">
+                <span>➕</span> Terbitkan Lisensi Baru
+            </button>
+            <button onclick="openModal('modalNewCustomer')" class="btn btn-secondary">
+                <span>🏢</span> Tambah Pelanggan
+            </button>
+            <a href="/api/v1/health/db" target="_blank" class="btn btn-secondary">
+                <span>🩺</span> Diagnostik Database
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Active Licenses Table -->
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">
+            <span>📜</span> Lisensi Komersial Terdaftar
+        </div>
+        <a href="/licenses" class="btn btn-secondary btn-sm">Lihat Seluruh Lisensi &rarr;</a>
+    </div>
+    <div class="table-responsive">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Kunci Lisensi</th>
+                    <th>Organisasi Pelanggan</th>
+                    <th>Paket Aplikasi</th>
+                    <th>Tipe</th>
+                    <th>Masa Berlaku</th>
+                    <th>Toleransi (Grace)</th>
+                    <th>Status Operasional</th>
+                    <th>Aksi</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if licenses %}
+                    {% for lic in licenses %}
+                    <tr>
+                        <td class="font-mono"><strong>{{ lic.license_key }}</strong></td>
+                        <td>{{ lic.customer.organization_name if lic.customer else '-' }}</td>
+                        <td><span class="badge badge-gold">{{ lic.package.package_name if lic.package else 'Custom' }}</span></td>
+                        <td>{{ lic.license_type }}</td>
+                        <td>{{ lic.valid_until.strftime('%d-%m-%Y') }}</td>
+                        <td>{{ lic.grace_period_days }} Hari</td>
+                        <td>
+                            {% set status = lic.computed_status %}
+                            {% if status == 'ACTIVE' %}
+                                <span class="badge badge-active">&bull; AKTIF</span>
+                            {% elif status == 'GRACE_PERIOD' %}
+                                <span class="badge badge-grace">&bull; GRACE PERIOD</span>
+                            {% elif status == 'RESTRICTED' %}
+                                <span class="badge badge-restricted">&bull; RESTRICTED MODE</span>
+                            {% else %}
+                                <span class="badge badge-revoked">&bull; {{ status }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <button onclick="testValidation('{{ lic.license_key }}', 'INST-2026-DPD-01')" class="btn btn-secondary btn-sm" title="Uji Validasi Berkala">
+                                🛡️ Uji Validasi
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="8" style="text-align: center; padding: 32px; color: var(--text-muted);">
+                            Belum ada lisensi komersial yang diterbitkan. Klik tombol "Terbitkan Lisensi Baru" untuk memulai.
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- System Status & Recent Audit Trail Split View -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 24px;">
+    <!-- Architecture & Security Card -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">
+                <span>🛡️</span> Arsitektur & Keamanan Lisensi
+            </div>
+        </div>
+        <div class="card-body">
+            <div style="display: flex; flex-direction: column; gap: 14px; font-size: 13px;">
+                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">
+                    <span style="color: var(--text-muted);">Mekanisme Tanda Tangan:</span>
+                    <strong style="color: var(--gold-light);">Ed25519 (Elliptic Curve Cryptography)</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">
+                    <span style="color: var(--text-muted);">Algoritma Password:</span>
+                    <strong style="color: var(--gold-light);">Argon2id (Memory-Hard Hashing)</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">
+                    <span style="color: var(--text-muted);">Penyimpanan Snapshot:</span>
+                    <strong style="color: var(--gold-light);">Immutable JSON Entitlements</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">
+                    <span style="color: var(--text-muted);">Masa Grace Period Standar:</span>
+                    <strong style="color: var(--gold-light);">7 Hari Kalender</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding-bottom: 4px;">
+                    <span style="color: var(--text-muted);">Restricted Mode:</span>
+                    <strong style="color: #34d399;">Data Aman (Read-Only & Backup Dijamin)</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Audit Logs Card -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">
+                <span>🔍</span> Log Audit Aktivitas Terkini
+            </div>
+            <a href="/audit" class="btn btn-secondary btn-sm">Audit Lengkap</a>
+        </div>
+        <div class="table-responsive">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Waktu</th>
+                        <th>Kategori</th>
+                        <th>Aksi</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if recent_audits %}
+                        {% for a in recent_audits %}
+                        <tr>
+                            <td class="font-mono">{{ a.created_at.strftime('%H:%M:%S') }}</td>
+                            <td><span class="badge badge-gold">{{ a.action_category }}</span></td>
+                            <td>{{ a.action_name }}</td>
+                            <td>
+                                {% if a.status == 'SUCCESS' %}
+                                    <span class="badge badge-active">SUKSES</span>
+                                {% else %}
+                                    <span class="badge badge-restricted">{{ a.status }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="4" style="text-align: center; color: var(--text-muted); padding: 20px;">
+                                Belum ada catatan aktivitas audit.
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Tambah Pelanggan -->
+<div id="modalNewCustomer" class="modal-overlay">
+    <div class="modal-container">
+        <div class="modal-header">
+            <div class="modal-title">Tambah Pelanggan SIMPATI Baru</div>
+            <button onclick="closeModal('modalNewCustomer')" class="modal-close">&times;</button>
+        </div>
+        <form id="formNewCustomer">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label" for="custCode">Kode Pelanggan (Unik)</label>
+                    <input type="text" id="custCode" class="form-control" placeholder="Contoh: CUST-2026-DPD-JABAR" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="custOrgName">Nama Organisasi</label>
+                    <input type="text" id="custOrgName" class="form-control" placeholder="Contoh: DPD SIMPATI Jawa Barat" required>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div class="form-group">
+                        <label class="form-label" for="custPerson">Penanggung Jawab</label>
+                        <input type="text" id="custPerson" class="form-control" placeholder="Contoh: Ir. Budi Santoso" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="custEmail">Email Resmi</label>
+                        <input type="email" id="custEmail" class="form-control" placeholder="budi@simpatidpd.id" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="custPhone">Nomor Kontak / WhatsApp</label>
+                    <input type="text" id="custPhone" class="form-control" placeholder="+62 812-3456-7890">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="custAddress">Alamat Kantor</label>
+                    <textarea id="custAddress" class="form-control" rows="2" placeholder="Jl. Raya Utama No. 555"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="custNotes">Catatan Internal</label>
+                    <input type="text" id="custNotes" class="form-control" placeholder="Catatan perjanjian lisensi">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" onclick="closeModal('modalNewCustomer')" class="btn btn-secondary">Batal</button>
+                <button type="submit" class="btn btn-primary">Simpan Pelanggan</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal: Terbitkan Lisensi -->
+<div id="modalNewLicense" class="modal-overlay">
+    <div class="modal-container">
+        <div class="modal-header">
+            <div class="modal-title">Terbitkan Lisensi Komersial SIMPATI 555</div>
+            <button onclick="closeModal('modalNewLicense')" class="modal-close">&times;</button>
+        </div>
+        <form id="formNewLicense">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label" for="licCustomerId">Pilih Organisasi Pelanggan</label>
+                    <select id="licCustomerId" class="form-control" required>
+                        <option value="">-- Pilih Pelanggan --</option>
+                        {% for c in customers %}
+                        <option value="{{ c.id }}">{{ c.organization_name }} ({{ c.customer_code }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div class="form-group">
+                        <label class="form-label" for="licPackageId">Paket Dasar</label>
+                        <select id="licPackageId" class="form-control" required>
+                            {% for p in packages %}
+                            <option value="{{ p.id }}">{{ p.package_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="licType">Tipe Lisensi</label>
+                        <select id="licType" class="form-control">
+                            <option value="COMMERCIAL">COMMERCIAL (Resmi)</option>
+                            <option value="TRIAL">TRIAL (Uji Coba)</option>
+                            <option value="GOVERNMENT">GOVERNMENT</option>
+                            <option value="INTERNAL">INTERNAL</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div class="form-group">
+                        <label class="form-label" for="licValidFrom">Mulai Berlaku</label>
+                        <input type="date" id="licValidFrom" class="form-control" value="2026-11-09" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="licValidUntil">Berlaku Sampai</label>
+                        <input type="date" id="licValidUntil" class="form-control" value="2027-11-09" required>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div class="form-group">
+                        <label class="form-label" for="licGraceDays">Toleransi Grace Period (Hari)</label>
+                        <input type="number" id="licGraceDays" class="form-control" value="7" min="0" max="60" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="licMaxInst">Maksimal Instalasi Server</label>
+                        <input type="number" id="licMaxInst" class="form-control" value="1" min="1" max="10" required>
+                    </div>
+                </div>
+
+                <!-- Hak Modul -->
+                <div class="form-group">
+                    <label class="form-label">Modul Yang Diizinkan (Snapshot Entitlements)</label>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 12px; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 6px; border: 1px solid var(--border-color);">
+                        <label><input type="checkbox" name="modules" value="CORE" checked disabled> CORE (Wajib)</label>
+                        <label><input type="checkbox" name="modules" value="DATA" checked> DATA</label>
+                        <label><input type="checkbox" name="modules" value="SURVEI_GPS" checked> SURVEI_GPS</label>
+                        <label><input type="checkbox" name="modules" value="UMKM" checked> UMKM</label>
+                        <label><input type="checkbox" name="modules" value="REPORT_ADV" checked> REPORT_ADV</label>
+                        <label><input type="checkbox" name="modules" value="FINANCE"> FINANCE</label>
+                        <label><input type="checkbox" name="modules" value="COOP"> COOP</label>
+                        <label><input type="checkbox" name="modules" value="SOCIAL"> SOCIAL</label>
+                        <label><input type="checkbox" name="modules" value="ASSET"> ASSET</label>
+                    </div>
+                </div>
+
+                <!-- Tingkat Organisasi -->
+                <div class="form-group">
+                    <label class="form-label">Tingkat Organisasi Yang Diizinkan</label>
+                    <div style="display: flex; gap: 16px; font-size: 12px; background: rgba(0,0,0,0.3); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--border-color);">
+                        <label><input type="checkbox" name="levels" value="DPD" checked> DPD</label>
+                        <label><input type="checkbox" name="levels" value="DPC" checked> DPC</label>
+                        <label><input type="checkbox" name="levels" value="DPS" checked> DPS</label>
+                        <label><input type="checkbox" name="levels" value="DPSS" checked> DPSS</label>
+                    </div>
+                </div>
+
+                <!-- Batas Kapasitas -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px;">
+                    <div class="form-group">
+                        <label class="form-label" for="capMembers">Maks Anggota</label>
+                        <input type="number" id="capMembers" class="form-control" value="50000">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="capAccounts">Maks Akun</label>
+                        <input type="number" id="capAccounts" class="form-control" value="200">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="capConcurrent">Pengguna Simultan</label>
+                        <input type="number" id="capConcurrent" class="form-control" value="25">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="capStorage">Storage (MB)</label>
+                        <input type="number" id="capStorage" class="form-control" value="20480">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="licNotes">Catatan Lisensi</label>
+                    <input type="text" id="licNotes" class="form-control" placeholder="Catatan kontrak lisensi...">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" onclick="closeModal('modalNewLicense')" class="btn btn-secondary">Batal</button>
+                <button type="submit" class="btn btn-primary">Terbitkan Lisensi</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

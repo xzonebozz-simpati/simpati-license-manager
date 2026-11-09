@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}SIMPATI License Manager{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/theme.css">
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+        <div class="brand-header">
+            <div class="brand-logo">555</div>
+            <div class="brand-text">
+                <h1>SIMPATI</h1>
+                <span>License Manager</span>
+            </div>
+        </div>
+
+        <ul class="nav-menu">
+            <li class="nav-item">
+                <a href="/" class="nav-link {% if active_menu == 'dashboard' %}active{% endif %}">
+                    <span class="nav-icon">📊</span>
+                    <span class="nav-text">Dashboard</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="/customers" class="nav-link {% if active_menu == 'customers' %}active{% endif %}">
+                    <span class="nav-icon">🏢</span>
+                    <span class="nav-text">Pelanggan</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="/installations" class="nav-link {% if active_menu == 'installations' %}active{% endif %}">
+                    <span class="nav-icon">🖥️</span>
+                    <span class="nav-text">Instalasi</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="/packages" class="nav-link {% if active_menu == 'packages' %}active{% endif %}">
+                    <span class="nav-icon">📦</span>
+                    <span class="nav-text">Paket Lisensi</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="/modules" class="nav-link {% if active_menu == 'modules' %}active{% endif %}">
+                    <span class="nav-icon">🧩</span>
+                    <span class="nav-text">Modul</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="/licenses" class="nav-link {% if active_menu == 'licenses' %}active{% endif %}">
+                    <span class="nav-icon">📜</span>
+                    <span class="nav-text">Lisensi</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="/validations" class="nav-link {% if active_menu == 'validations' %}active{% endif %}">
+                    <span class="nav-icon">🛡️</span>
+                    <span class="nav-text">Validasi</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="/history" class="nav-link {% if active_menu == 'history' %}active{% endif %}">
+                    <span class="nav-icon">⏱️</span>
+                    <span class="nav-text">Riwayat</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="/audit" class="nav-link {% if active_menu == 'audit' %}active{% endif %}">
+                    <span class="nav-icon">🔍</span>
+                    <span class="nav-text">Audit Log</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="/settings" class="nav-link {% if active_menu == 'settings' %}active{% endif %}">
+                    <span class="nav-icon">⚙️</span>
+                    <span class="nav-text">Pengaturan</span>
+                </a>
+            </li>
+        </ul>
+
+        <div class="sidebar-footer">
+            <div class="user-badge" style="justify-content: space-between; width: 100%;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div class="user-avatar">
+                        {{ current_user.username[:2].upper() if current_user else 'SA' }}
+                    </div>
+                    <div class="user-info">
+                        <div class="user-name">{{ current_user.full_name if current_user else 'License Superadmin' }}</div>
+                        <div class="user-role">{{ current_user.role if current_user else 'SUPERADMIN' }}</div>
+                    </div>
+                </div>
+                <a href="/logout" title="Keluar dari sistem" style="color: #f87171; text-decoration: none; font-size: 16px; padding: 4px 6px;">
+                    🚪
+                </a>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content Wrapper -->
+    <div class="main-wrapper">
+        <header class="topbar">
+            <div class="page-title">
+                {% block header_title %}Pusat Pengelolaan Lisensi SIMPATI 555{% endblock %}
+            </div>
+            <div class="topbar-actions">
+                <div class="system-status-indicator">
+                    <span class="status-dot"></span>
+                    <span>Database Terhubung</span>
+                </div>
+                <a href="/settings" class="btn btn-secondary btn-sm">Ed25519 Active</a>
+                <a href="/logout" class="btn btn-secondary btn-sm" style="border-color: rgba(239, 68, 68, 0.4); color: #f87171;">
+                    <span>🚪</span> Keluar
+                </a>
+            </div>
+        </header>
+
+        <main class="content-container">
+            {% block content %}{% endblock %}
+        </main>
+
+        <footer class="app-footer">
+            <div>&copy; 2026 SIMPATI License Manager &bull; Pusat Lisensi Komersial SIMPATI 555</div>
+            <div>Fondasi v1.0.0 &bull; PostgreSQL &bull; Argon2id &bull; Ed25519</div>
+        </footer>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

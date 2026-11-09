@@ -1,0 +1,488 @@
+{% extends "base.html" %}
+
+{% block title %}Lisensi - SIMPATI License Manager{% endblock %}
+{% block header_title %}Manajemen Lisensi Komersial SIMPATI 555{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">
+            <span>📜</span> Daftar Lisensi Komersial SIMPATI
+        </div>
+        <button onclick="openModal('modalNewLicense')" class="btn btn-primary">
+            <span>➕</span> Terbitkan Lisensi Baru
+        </button>
+    </div>
+    <div class="table-responsive">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Kunci Lisensi</th>
+                    <th>Organisasi Pelanggan</th>
+                    <th>Paket Dasar</th>
+                    <th>Tipe</th>
+                    <th>Masa Berlaku</th>
+                    <th>Server Terhubung</th>
+                    <th>Tanda Tangan Kripto</th>
+                    <th>Status</th>
+                    <th style="text-align: center; min-width: 210px;">Aksi</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if licenses %}
+                    {% for lic in licenses %}
+                    <tr id="row-lic-{{ lic.id }}">
+                        <td class="font-mono"><strong>{{ lic.license_key }}</strong></td>
+                        <td><strong style="color: var(--gold-light);">{{ lic.customer.organization_name if lic.customer else '-' }}</strong></td>
+                        <td><span class="badge badge-gold">{{ lic.package.package_name if lic.package else 'Custom' }}</span></td>
+                        <td style="font-size: 11px;">{{ lic.license_type }}</td>
+                        <td style="font-size: 11px;">
+                            <div>{{ lic.valid_from.strftime('%d-%m-%Y') }} s.d.</div>
+                            <strong>{{ lic.valid_until.strftime('%d-%m-%Y') }}</strong>
+                        </td>
+                        <td>
+                            {% set inst_count = lic.installations | length %}
+                            {% if inst_count > 0 %}
+                                <span class="badge badge-active font-mono" title="{{ lic.installations | map(attribute='installation.installation_code') | join(', ') }}">
+                                    🖥️ {{ inst_count }}/{{ lic.max_installations }}
+                                </span>
+                            {% else %}
+                                <span class="badge badge-secondary" title="Belum ada server terhubung">⚪ 0/{{ lic.max_installations }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if lic.signature %}
+                                <span class="badge badge-active" title="Ditandatangani secara digital dengan Ed25519">🔒 Ed25519</span>
+                            {% else %}
+                                <span class="badge badge-secondary">Belum TTD</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% set status = lic.computed_status %}
+                            {% if status == 'ACTIVE' %}
+                                <span class="badge badge-active">&bull; AKTIF</span>
+                            {% elif status == 'GRACE_PERIOD' %}
+                                <span class="badge badge-grace">&bull; GRACE PERIOD</span>
+                            {% elif status == 'RESTRICTED' %}
+                                <span class="badge badge-restricted">&bull; RESTRICTED</span>
+                            {% elif status == 'SUSPENDED' %}
+                                <span class="badge badge-restricted">&bull; SUSPENDED</span>
+                            {% elif status == 'REVOKED' %}
+                                <span class="badge badge-revoked">&bull; DICABUT</span>
+                            {% else %}
+                                <span class="badge badge-secondary">&bull; {{ status }}</span>
+                            {% endif %}
+                        </td>
+                        <td style="text-align: center;">
+                            <div style="display: inline-flex; gap: 4px; justify-content: center; flex-wrap: wrap;">
+                                <button 
+                                    onclick="viewLicenseDetail('{{ lic.id }}')" 
+                                    class="btn btn-secondary btn-sm" 
+                                    title="Lihat Detail &amp; Verifikasi Kripto"
+                                >
+                                    👁️ Detail
+                                </button>
+                                <button 
+                                    onclick="openExtendLicenseModal('{{ lic.id }}', '{{ lic.license_key }}', '{{ lic.valid_until.strftime('%Y-%m-%d') }}')" 
+                                    class="btn btn-secondary btn-sm" 
+                                    title="Perpanjang Masa Berlaku Lisensi"
+                                >
+                                    ⏱️ Perpanjang
+                                </button>
+                                <button 
+                                    onclick="openLicenseStatusModal('{{ lic.id }}', '{{ lic.license_key }}', '{{ lic.status }}')" 
+                                    class="btn btn-secondary btn-sm" 
+                                    title="Kelola Status (Suspend/Aktifkan/Cabut)"
+                                >
+                                    🔄 Status
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="9" style="text-align: center; padding: 40px; color: var(--text-muted);">
+                            Belum ada lisensi komersial diterbitkan. Klik <strong>Terbitkan Lisensi Baru</strong> untuk memulai.
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- MODAL 1: TERBITKAN LISENSI KOMERSIAL BARU -->
+<!-- ========================================================================= -->
+<div id="modalNewLicense" class="modal-overlay">
+    <div class="modal-container" style="max-width: 780px;">
+        <div class="modal-header">
+            <div class="modal-title"><span>📜</span> Terbitkan Lisensi Komersial SIMPATI 555</div>
+            <button onclick="closeModal('modalNewLicense')" class="modal-close">&times;</button>
+        </div>
+        <form id="formNewLicense">
+            <div class="modal-body">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <div class="form-group">
+                        <label class="form-label" for="licCustomerId">Organisasi Pelanggan <span style="color: #f87171;">*</span></label>
+                        <select id="licCustomerId" class="form-control" required onchange="onLicenseCustomerChange(this.value)">
+                            <option value="">-- Pilih Pelanggan --</option>
+                            {% for c in customers %}
+                            <option value="{{ c.id }}">{{ c.organization_name }} ({{ c.customer_code }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="licInstallationId">Server Instalasi Terhubung (Opsional)</label>
+                        <select id="licInstallationId" class="form-control">
+                            <option value="">-- Hubungkan Nanti / Belum Ada Server --</option>
+                            {% for inst in installations %}
+                            <option value="{{ inst.id }}" data-customer-id="{{ inst.customer_id }}">
+                                {{ inst.name }} ({{ inst.installation_code }})
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <span style="font-size: 11px; color: var(--text-muted);">Dapat dihubungkan sekarang atau saat aktivasi pertama.</span>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <div class="form-group">
+                        <label class="form-label" for="licPackageId">Paket Dasar <span style="color: #f87171;">*</span></label>
+                        <select id="licPackageId" class="form-control" required onchange="onLicensePackageChange(this.value)">
+                            <option value="">-- Pilih Paket --</option>
+                            {% for p in packages %}
+                            <option value="{{ p.id }}">{{ p.package_name }} ({{ p.default_tier }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="licType">Tipe Lisensi <span style="color: #f87171;">*</span></label>
+                        <select id="licType" class="form-control">
+                            <option value="COMMERCIAL">COMMERCIAL (Resmi Standar)</option>
+                            <option value="TRIAL">TRIAL (Uji Coba)</option>
+                            <option value="GOVERNMENT">GOVERNMENT / KEMITRAAN</option>
+                            <option value="INTERNAL">INTERNAL TESTING</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <div class="form-group">
+                        <label class="form-label" for="licValidFrom">Mulai Berlaku <span style="color: #f87171;">*</span></label>
+                        <input type="date" id="licValidFrom" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="licValidUntil">Berlaku Sampai (Kedaluwarsa) <span style="color: #f87171;">*</span></label>
+                        <input type="date" id="licValidUntil" class="form-control" required>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <div class="form-group">
+                        <label class="form-label" for="licGraceDays">Toleransi Grace Period (Hari)</label>
+                        <input type="number" id="licGraceDays" class="form-control" value="7" min="0" max="60" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="licMaxInst">Maksimal Server Deployment</label>
+                        <input type="number" id="licMaxInst" class="form-control" value="1" min="1" max="10" required>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Modul Yang Diperoleh (Snapshot Entitlements) <span style="color: #f87171;">*</span></label>
+                    <div id="licModulesContainer" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 12px; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 6px; border: 1px solid var(--border-color);">
+                        {% if all_modules %}
+                            {% for m in all_modules %}
+                            <label style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                                <input type="checkbox" name="modules" value="{{ m.module_code }}" {% if m.is_core or m.module_code == 'CORE' %}checked{% endif %}>
+                                <span><strong>{{ m.module_code }}</strong> <small style="color: var(--text-muted);">({{ m.module_name }})</small></span>
+                            </label>
+                            {% endfor %}
+                        {% else %}
+                            <label><input type="checkbox" name="modules" value="CORE" checked> CORE</label>
+                            <label><input type="checkbox" name="modules" value="DATA" checked> DATA</label>
+                            <label><input type="checkbox" name="modules" value="SURVEI_GPS" checked> SURVEI_GPS</label>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Tingkat Organisasi Tercover</label>
+                    <div style="display: flex; gap: 16px; font-size: 12px; background: rgba(0,0,0,0.3); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--border-color);">
+                        <label style="cursor: pointer;"><input type="checkbox" name="levels" value="DPD" checked> DPD (Provinsi)</label>
+                        <label style="cursor: pointer;"><input type="checkbox" name="levels" value="DPC" checked> DPC (Kab/Kota)</label>
+                        <label style="cursor: pointer;"><input type="checkbox" name="levels" value="DPS" checked> DPS (Kecamatan)</label>
+                        <label style="cursor: pointer;"><input type="checkbox" name="levels" value="DPSS" checked> DPSS (Desa/Kelurahan)</label>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px;">
+                    <div class="form-group">
+                        <label class="form-label" for="capMembers">Maks Anggota</label>
+                        <input type="number" id="capMembers" class="form-control" value="50000">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="capAccounts">Maks Akun</label>
+                        <input type="number" id="capAccounts" class="form-control" value="200">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="capConcurrent">Pengguna Simultan</label>
+                        <input type="number" id="capConcurrent" class="form-control" value="25">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="capStorage">Storage (MB)</label>
+                        <input type="number" id="capStorage" class="form-control" value="20480">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="licNotes">Catatan Kontrak / Lisensi</label>
+                    <input type="text" id="licNotes" class="form-control" placeholder="Contoh: Kontrak Tahunan Periode 2026/2027">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" onclick="closeModal('modalNewLicense')" class="btn btn-secondary">Batal</button>
+                <button type="submit" class="btn btn-primary">Terbitkan &amp; Tandatangani Kripto (Ed25519)</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- MODAL 2: DETAIL LENGKAP LISENSI (MULTI-TAB & KRIPTO) -->
+<!-- ========================================================================= -->
+<div id="modalLicenseDetail" class="modal-overlay">
+    <div class="modal-container" style="max-width: 850px;">
+        <div class="modal-header">
+            <div class="modal-title"><span>📜</span> Profil Lisensi Komersial &amp; Tanda Tangan Kriptografis</div>
+            <button class="modal-close" onclick="closeModal('modalLicenseDetail')">&times;</button>
+        </div>
+        <div class="modal-body" style="padding-top: 14px;">
+            <!-- Header Banner -->
+            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.35); padding: 14px 18px; border-radius: 8px; border: 1px solid var(--border-color); margin-bottom: 16px;">
+                <div>
+                    <h3 id="detLicKey" class="font-mono" style="color: var(--gold-light); font-size: 17px; margin: 0 0 4px 0;">-</h3>
+                    <div style="font-size: 12px; color: var(--text-muted);">
+                        Pelanggan: <strong id="detLicCustName" style="color: var(--text-main);">-</strong> &bull; 
+                        Paket: <span id="detLicPkgName" class="badge badge-gold">-</span>
+                    </div>
+                </div>
+                <div style="text-align: right;">
+                    <span id="detLicStatusBadge" class="badge badge-active">-</span>
+                    <div id="detLicSignatureBadge" style="margin-top: 4px;" class="badge badge-active">🔒 Ed25519 Valid</div>
+                </div>
+            </div>
+
+            <!-- Tab Navigation -->
+            <div class="tabs-nav" style="display: flex; gap: 8px; border-bottom: 1px solid var(--border-color); margin-bottom: 18px;">
+                <button class="tab-btn active" onclick="switchLicTab('tab-lic-overview')">📋 Ringkasan &amp; Server</button>
+                <button class="tab-btn" onclick="switchLicTab('tab-lic-modules')">🧩 Modul &amp; Kapasitas</button>
+                <button class="tab-btn" onclick="switchLicTab('tab-lic-crypto')">🔒 Tanda Tangan Digital (Ed25519)</button>
+                <button class="tab-btn" onclick="switchLicTab('tab-lic-history')">📜 Riwayat Perubahan (<span id="detLicHistoryCount">0</span>)</button>
+            </div>
+
+            <!-- TAB 1: Overview & Installations -->
+            <div id="tab-lic-overview" class="tab-pane active">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px;">
+                    <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 6px; padding: 12px; font-size: 12px;">
+                        <span style="color: var(--text-muted); text-transform: uppercase;">Masa Berlaku</span>
+                        <div style="margin-top: 6px;">Mulai: <strong id="detLicFrom">-</strong></div>
+                        <div style="margin-top: 4px;">Kedaluwarsa: <strong id="detLicUntil">-</strong></div>
+                        <div style="margin-top: 4px;">Grace Period: <strong id="detLicGrace">-</strong></div>
+                    </div>
+                    <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 6px; padding: 12px; font-size: 12px;">
+                        <span style="color: var(--text-muted); text-transform: uppercase;">Ketentuan Deployment</span>
+                        <div style="margin-top: 6px;">Maks Server: <strong id="detLicMaxInst">-</strong></div>
+                        <div style="margin-top: 4px;">Tipe Lisensi: <strong id="detLicType">-</strong></div>
+                        <div style="margin-top: 4px;">Catatan: <span id="detLicNotes">-</span></div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Server Instalasi Terhubung</label>
+                    <div class="table-responsive">
+                        <table class="data-table" style="font-size: 12px;">
+                            <thead>
+                                <tr>
+                                    <th>Kode Server</th>
+                                    <th>Nama Server</th>
+                                    <th>Lingkungan</th>
+                                    <th>Status Server</th>
+                                </tr>
+                            </thead>
+                            <tbody id="detLicInstallationsBody">
+                                <!-- Populated via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 2: Modules & Capacity -->
+            <div id="tab-lic-modules" class="tab-pane" style="display: none;">
+                <div class="form-group">
+                    <label class="form-label">Modul Aktif Dalam Lisensi</label>
+                    <div id="detLicModulesList" style="display: flex; flex-wrap: wrap; gap: 6px;">
+                        <!-- Populated via JS -->
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-top: 16px;">
+                    <label class="form-label">Tingkat Organisasi Yang Diotorisasi</label>
+                    <div id="detLicLevelsList" style="display: flex; gap: 6px;">
+                        <!-- Populated via JS -->
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-top: 16px;">
+                    <label class="form-label">Alokasi Batas Kapasitas</label>
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; font-size: 12px;">
+                        <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 6px; padding: 10px; text-align: center;">
+                            <span style="color: var(--text-muted);">Maks Anggota</span>
+                            <div id="detCapMembers" style="font-size: 16px; font-weight: bold; color: var(--gold-light); margin-top: 4px;">-</div>
+                        </div>
+                        <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 6px; padding: 10px; text-align: center;">
+                            <span style="color: var(--text-muted);">Maks Akun</span>
+                            <div id="detCapAccounts" style="font-size: 16px; font-weight: bold; color: var(--gold-light); margin-top: 4px;">-</div>
+                        </div>
+                        <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 6px; padding: 10px; text-align: center;">
+                            <span style="color: var(--text-muted);">Sesi Simultan</span>
+                            <div id="detCapConcurrent" style="font-size: 16px; font-weight: bold; color: var(--gold-light); margin-top: 4px;">-</div>
+                        </div>
+                        <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 6px; padding: 10px; text-align: center;">
+                            <span style="color: var(--text-muted);">Storage Quota</span>
+                            <div id="detCapStorage" style="font-size: 16px; font-weight: bold; color: var(--gold-light); margin-top: 4px;">-</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 3: Cryptographic Signature (Ed25519) -->
+            <div id="tab-lic-crypto" class="tab-pane" style="display: none;">
+                <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 8px; padding: 12px; margin-bottom: 14px;">
+                    <strong style="color: #34d399;">🔒 Integritas Kriptografis Terjamin (Ed25519)</strong>
+                    <p style="font-size: 12px; color: var(--text-main); margin-top: 4px;">
+                        Payload snapshot lisensi ditandatangani secara asimetris oleh License Manager pusat saat penerbitan/perpanjangan. Tanda tangan ini tidak dapat dipalsukan dan memvalidasi keaslian hak komersial pelanggan.
+                    </p>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Tanda Tangan Digital (Base64)</label>
+                    <div style="display: flex; gap: 8px;">
+                        <textarea id="detLicSignatureText" class="form-control font-mono" rows="2" readonly style="font-size: 11px;"></textarea>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="copyToClipboard('detLicSignatureText')">Salin</button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Canonical Snapshot Entitlements Payload</label>
+                    <textarea id="detLicSnapshotText" class="form-control font-mono" rows="6" readonly style="font-size: 11px;"></textarea>
+                </div>
+            </div>
+
+            <!-- TAB 4: Audit History -->
+            <div id="tab-lic-history" class="tab-pane" style="display: none;">
+                <div class="table-responsive">
+                    <table class="data-table" style="font-size: 12px;">
+                        <thead>
+                            <tr>
+                                <th>Waktu</th>
+                                <th>Aksi</th>
+                                <th>Pelaksana</th>
+                                <th>Keterangan / Alasan</th>
+                            </tr>
+                        </thead>
+                        <tbody id="detLicHistoryBody">
+                            <!-- Populated via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('modalLicenseDetail')">Tutup</button>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- MODAL 3: PERPANJANG LISENSI -->
+<!-- ========================================================================= -->
+<div id="modalExtendLicense" class="modal-overlay">
+    <div class="modal-container" style="max-width: 500px;">
+        <div class="modal-header">
+            <div class="modal-title"><span>⏱️</span> Perpanjang Masa Berlaku Lisensi</div>
+            <button class="modal-close" onclick="closeModal('modalExtendLicense')">&times;</button>
+        </div>
+        <form id="formExtendLicense">
+            <input type="hidden" id="extLicId">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">Kunci Lisensi</label>
+                    <input type="text" id="extLicKey" class="form-control font-mono" readonly style="background: rgba(0,0,0,0.5);">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Kedaluwarsa Saat Ini</label>
+                    <input type="date" id="extLicCurrentUntil" class="form-control" readonly style="background: rgba(0,0,0,0.5);">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Tanggal Kedaluwarsa Baru <span style="color: #f87171;">*</span></label>
+                    <input type="date" id="extLicNewUntil" class="form-control" required>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Alasan Perpanjangan <span style="color: #f87171;">*</span></label>
+                    <textarea id="extLicReason" class="form-control" rows="2" placeholder="Contoh: Perpanjangan kontrak langganan tahun kedua..." required></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('modalExtendLicense')">Batal</button>
+                <button type="submit" class="btn btn-primary">Perpanjang &amp; Tanda Tangani Ulang</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- MODAL 4: UBAH STATUS LISENSI (SUSPEND / REACTIVATE / REVOKE) -->
+<!-- ========================================================================= -->
+<div id="modalLicenseStatus" class="modal-overlay">
+    <div class="modal-container" style="max-width: 500px; border-color: var(--gold-primary);">
+        <div class="modal-header">
+            <div class="modal-title"><span>🔄</span> Kelola Status Operasional Lisensi</div>
+            <button class="modal-close" onclick="closeModal('modalLicenseStatus')">&times;</button>
+        </div>
+        <form id="formLicenseStatus">
+            <input type="hidden" id="statusLicId">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">Kunci Lisensi</label>
+                    <input type="text" id="statusLicKey" class="form-control font-mono" readonly style="background: rgba(0,0,0,0.5);">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Pilih Tindakan Status <span style="color: #f87171;">*</span></label>
+                    <select id="statusLicTarget" class="form-control" required>
+                        <option value="ACTIVE">✅ Aktifkan Kembali (ACTIVE)</option>
+                        <option value="SUSPENDED">⛔ Tangguhkan (SUSPENDED)</option>
+                        <option value="REVOKED">❌ Cabut Permanen (REVOKED - Masuk CRL)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Alasan Tindakan <span style="color: #f87171;">*</span></label>
+                    <textarea id="statusLicReason" class="form-control" rows="3" placeholder="Wajib menyertakan alasan administratif untuk jejak audit..." required></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('modalLicenseStatus')">Batal</button>
+                <button type="submit" class="btn btn-primary">Terapkan Perubahan Status</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

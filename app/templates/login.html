@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login Superadmin - SIMPATI License Manager</title>
+    <link rel="stylesheet" href="/static/css/theme.css">
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <style>
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background: radial-gradient(circle at center, #22050b 0%, #0c0809 100%);
+            padding: 20px;
+        }
+        .login-wrapper {
+            width: 100%;
+            max-width: 440px;
+        }
+        .login-card {
+            background: var(--bg-card);
+            border: 1px solid var(--gold-primary);
+            border-radius: 14px;
+            box-shadow: 0 16px 48px rgba(0, 0, 0, 0.9), 0 0 35px rgba(212, 175, 55, 0.2);
+            overflow: hidden;
+        }
+        .login-header {
+            background: var(--maroon-gradient);
+            padding: 32px 28px 24px;
+            text-align: center;
+            border-bottom: 2px solid var(--gold-primary);
+        }
+        .login-logo {
+            width: 58px;
+            height: 58px;
+            background: var(--gold-gradient);
+            color: var(--maroon-dark);
+            font-size: 26px;
+            font-weight: 900;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            margin-bottom: 14px;
+            box-shadow: 0 0 20px rgba(212, 175, 55, 0.5);
+        }
+        .login-title {
+            color: var(--gold-light);
+            font-size: 20px;
+            font-weight: 800;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+        .login-subtitle {
+            color: var(--text-muted);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+        }
+        .login-body {
+            padding: 32px 28px;
+        }
+        .input-icon-wrapper {
+            position: relative;
+        }
+        .input-icon {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--gold-primary);
+            font-size: 15px;
+        }
+        .input-with-icon {
+            padding-left: 42px !important;
+        }
+        .login-footer {
+            padding: 16px 28px 24px;
+            text-align: center;
+            font-size: 11px;
+            color: var(--text-muted);
+            border-top: 1px solid rgba(212, 175, 55, 0.15);
+            background-color: rgba(10, 5, 8, 0.6);
+        }
+        .security-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--gold-light);
+            font-size: 11px;
+            margin-top: 6px;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-wrapper">
+        <div class="login-card">
+            <div class="login-header">
+                <div class="login-logo">555</div>
+                <h1 class="login-title">SIMPATI 555</h1>
+                <div class="login-subtitle">Pusat Pengelolaan Lisensi Komersial</div>
+            </div>
+
+            <div class="login-body">
+                {% if error_message %}
+                <div class="alert-box alert-danger">
+                    <span>⚠️</span>
+                    <span>{{ error_message }}</span>
+                </div>
+                {% endif %}
+
+                {% if info_message %}
+                <div class="alert-box alert-success">
+                    <span>🔒</span>
+                    <span>{{ info_message }}</span>
+                </div>
+                {% endif %}
+
+                <form method="POST" action="/login">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="next" value="{{ next_url or '/' }}">
+
+                    <div class="form-group">
+                        <label class="form-label" for="username">Nama Pengguna Superadmin</label>
+                        <div class="input-icon-wrapper">
+                            <span class="input-icon">👤</span>
+                            <input 
+                                type="text" 
+                                id="username" 
+                                name="username" 
+                                class="form-control input-with-icon" 
+                                placeholder="Masukkan username" 
+                                value="{{ username or '' }}"
+                                required 
+                                autofocus
+                            >
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="password">Kata Sandi</label>
+                        <div class="input-icon-wrapper">
+                            <span class="input-icon">🔒</span>
+                            <input 
+                                type="password" 
+                                id="password" 
+                                name="password" 
+                                class="form-control input-with-icon" 
+                                placeholder="Masukkan password" 
+                                required
+                            >
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 24px;">
+                        <button type="submit" class="btn btn-primary" style="width: 100%; padding: 12px; font-size: 14px;">
+                            <span>🔐</span> Masuk ke Sistem License Manager
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="login-footer">
+                <div class="security-badge">
+                    <span>🛡️</span> Dilindungi Argon2id &amp; Sesi Kriptografis
+                </div>
+                <div style="margin-top: 6px;">
+                    Akses terbatas khusus License Superadmin dan Operator terdaftar.
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

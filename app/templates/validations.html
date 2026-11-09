@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}Validasi - SIMPATI License Manager{% endblock %}
+{% block header_title %}Log Validasi & Integritas Kriptografis Online{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">
+            <span>🛡️</span> Catatan Validasi Berkala Server SIMPATI
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Token Validasi</th>
+                    <th>Kunci Lisensi</th>
+                    <th>Kode Server</th>
+                    <th>IP Pemohon</th>
+                    <th>Status Validasi</th>
+                    <th>Jatuh Tempo Validasi</th>
+                    <th>Waktu Pemeriksaan</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if validations %}
+                    {% for v in validations %}
+                    <tr>
+                        <td class="font-mono"><strong>{{ v.validation_token }}</strong></td>
+                        <td class="font-mono">{{ v.license.license_key if v.license else '-' }}</td>
+                        <td>{{ v.installation.installation_code if v.installation else '-' }}</td>
+                        <td class="font-mono">{{ v.request_ip or '-' }}</td>
+                        <td>
+                            {% if v.validation_status == 'ACTIVE' or v.validation_status == 'VALID' %}
+                                <span class="badge badge-active">VALID</span>
+                            {% elif v.validation_status == 'GRACE_PERIOD' %}
+                                <span class="badge badge-grace">GRACE PERIOD</span>
+                            {% elif v.validation_status == 'RESTRICTED' %}
+                                <span class="badge badge-restricted">RESTRICTED</span>
+                            {% else %}
+                                <span class="badge badge-revoked">{{ v.validation_status }}</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ v.next_validation_due.strftime('%d-%m-%Y %H:%M') }}</td>
+                        <td>{{ v.validated_at.strftime('%d-%m-%Y %H:%M:%S') }}</td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="7" style="text-align: center; padding: 32px; color: var(--text-muted);">
+                            Belum ada riwayat validasi berkala.
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

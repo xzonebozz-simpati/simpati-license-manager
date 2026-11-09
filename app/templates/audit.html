@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Audit Log - SIMPATI License Manager{% endblock %}
+{% block header_title %}Catatan Audit Keamanan & Aktivitas Administratif{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">
+            <span>🔍</span> Jejak Audit Sistem Terpusat
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Waktu (UTC)</th>
+                    <th>Operator</th>
+                    <th>IP Address</th>
+                    <th>Kategori</th>
+                    <th>Nama Aksi</th>
+                    <th>Sumber Daya Target</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if audit_logs %}
+                    {% for a in audit_logs %}
+                    <tr>
+                        <td class="font-mono">{{ a.created_at.strftime('%d-%m-%Y %H:%M:%S') }}</td>
+                        <td>{{ a.user.username if a.user else 'System' }}</td>
+                        <td class="font-mono">{{ a.ip_address or '-' }}</td>
+                        <td><span class="badge badge-gold">{{ a.action_category }}</span></td>
+                        <td><strong>{{ a.action_name }}</strong></td>
+                        <td class="font-mono">{{ a.target_resource or '-' }}</td>
+                        <td>
+                            {% if a.status == 'SUCCESS' %}
+                                <span class="badge badge-active">SUKSES</span>
+                            {% else %}
+                                <span class="badge badge-restricted">{{ a.status }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="7" style="text-align: center; padding: 32px; color: var(--text-muted);">
+                            Belum ada catatan log audit.
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

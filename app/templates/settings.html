@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}Pengaturan - SIMPATI License Manager{% endblock %}
+{% block header_title %}Konfigurasi Sistem & Kunci Tanda Tangan Lisensi{% endblock %}
+
+{% block content %}
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 24px;">
+    <!-- System Configuration Card -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">
+                <span>⚙️</span> Parameter Bisnis Lisensi
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="form-group">
+                <label class="form-label">Toleransi Grace Period Default</label>
+                <input type="text" class="form-control" value="7 Hari Kalender" readonly>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Interval Validasi Berkala Token</label>
+                <input type="text" class="form-control" value="24 Jam (Setiap 1 hari)" readonly>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Kebijakan Restricted Mode</label>
+                <input type="text" class="form-control" value="Aktif (Data tetap dapat diakses & di-export)" readonly>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Database Engine</label>
+                <input type="text" class="form-control" value="PostgreSQL Dedicated (SQLAlchemy 2.x)" readonly>
+            </div>
+        </div>
+    </div>
+
+    <!-- Signing Key & Cryptography Card -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">
+                <span>🔑</span> Kunci Digital Ed25519
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="form-group">
+                <label class="form-label">Pengidentifikasi Kunci (Key Identifier)</label>
+                <input type="text" class="form-control font-mono" value="KEY-SIMPATI-ROOT-V1" readonly>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Algoritma Asimetris</label>
+                <input type="text" class="form-control" value="Ed25519 (Edwards-curve Digital Signature)" readonly>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Status Private Key</label>
+                <input type="text" class="form-control" value="Tersimpan Aman di Secure Vault / Environment Variables" readonly>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Algoritma Hashing Akun Superadmin</label>
+                <input type="text" class="form-control" value="Argon2id (m=65536, t=3, p=4)" readonly>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- System Settings Table -->
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">
+            <span>📋</span> Tabel Pengaturan Sistem (`system_settings`)
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Kunci Pengaturan</th>
+                    <th>Nilai</th>
+                    <th>Tipe Data</th>
+                    <th>Deskripsi</th>
+                    <th>Diperbarui</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if settings_list %}
+                    {% for s in settings_list %}
+                    <tr>
+                        <td class="font-mono"><strong>{{ s.setting_key }}</strong></td>
+                        <td class="font-mono">{{ s.setting_value }}</td>
+                        <td><span class="badge badge-gold">{{ s.data_type }}</span></td>
+                        <td>{{ s.description or '-' }}</td>
+                        <td>{{ s.updated_at.strftime('%d-%m-%Y %H:%M') }}</td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="5" style="text-align: center; padding: 24px; color: var(--text-muted);">
+                            Belum ada pengaturan tambahan yang tersimpan.
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

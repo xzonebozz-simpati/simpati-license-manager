@@ -1,0 +1,508 @@
+{% extends "base.html" %}
+
+{% block title %}Instalasi - SIMPATI License Manager{% endblock %}
+{% block header_title %}Manajemen Deployment & Server Instalasi SIMPATI{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">
+            <span>🖥️</span> Daftar Server Deployment SIMPATI
+        </div>
+        <button onclick="openModal('modalNewInstallation')" class="btn btn-primary">
+            <span>➕</span> Daftarkan Instalasi Baru
+        </button>
+    </div>
+    <div class="table-responsive">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Kode Instalasi</th>
+                    <th>Nama Server</th>
+                    <th>Organisasi Pelanggan</th>
+                    <th>Lingkungan</th>
+                    <th>Host / IP</th>
+                    <th>Kunci Publik (Ed25519)</th>
+                    <th>Status</th>
+                    <th>Heartbeat Terakhir</th>
+                    <th style="text-align: center; min-width: 220px;">Aksi</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if installations %}
+                    {% for inst in installations %}
+                    <tr id="row-inst-{{ inst.id }}">
+                        <td class="font-mono"><strong>{{ inst.installation_code }}</strong></td>
+                        <td><strong style="color: var(--gold-light);">{{ inst.name }}</strong></td>
+                        <td>{{ inst.customer.organization_name if inst.customer else '-' }}</td>
+                        <td>
+                            {% if inst.environment == 'PRODUCTION' %}
+                                <span class="badge badge-gold">PROD</span>
+                            {% elif inst.environment == 'STAGING' %}
+                                <span class="badge badge-secondary">STAGING</span>
+                            {% else %}
+                                <span class="badge badge-secondary">{{ inst.environment }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="font-mono" style="font-size: 11px;">
+                            <div>{{ inst.server_domain or '-' }}</div>
+                            <div style="color: var(--text-muted);">{{ inst.server_ip or '' }}</div>
+                        </td>
+                        <td>
+                            {% if inst.public_key_pem %}
+                                <span class="badge badge-active" title="Public Key Ed25519 Terdaftar">🔒 Terdaftar</span>
+                            {% else %}
+                                <span class="badge badge-secondary" title="Belum Mendaftarkan Kunci Publik">⚪ Belum Ada</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if inst.status == 'ACTIVE' %}
+                                <span class="badge badge-active">&bull; AKTIF</span>
+                            {% elif inst.status == 'SUSPENDED' %}
+                                <span class="badge badge-restricted">&bull; SUSPENDED</span>
+                            {% elif inst.status == 'REVOKED' %}
+                                <span class="badge badge-revoked">&bull; DICABUT</span>
+                            {% else %}
+                                <span class="badge badge-secondary">&bull; {{ inst.status }}</span>
+                            {% endif %}
+                        </td>
+                        <td style="font-size: 11px;">
+                            {% if inst.last_heartbeat_at %}
+                                <div style="color: var(--gold-light);">{{ inst.last_heartbeat_at.strftime('%d-%m-%Y %H:%M') }}</div>
+                                <span style="color: #34d399; font-size: 10px;">● Online</span>
+                            {% else %}
+                                <span style="color: var(--text-muted);">Belum ada ping</span>
+                            {% endif %}
+                        </td>
+                        <td style="text-align: center;">
+                            <div style="display: inline-flex; gap: 4px; justify-content: center; flex-wrap: wrap;">
+                                <button 
+                                    onclick="viewInstallationDetail('{{ inst.id }}')" 
+                                    class="btn btn-secondary btn-sm" 
+                                    title="Detail Lengkap &amp; Kredensial"
+                                >
+                                    👁️ Detail
+                                </button>
+                                <button 
+                                    onclick="openEditInstallation('{{ inst.id }}', '{{ inst.name | e }}', '{{ inst.server_domain or '' }}', '{{ inst.server_ip or '' }}', '{{ inst.environment }}', '{{ (inst.hardware_signature or '') | e }}')" 
+                                    class="btn btn-secondary btn-sm" 
+                                    title="Edit Informasi Server"
+                                >
+                                    ✏️ Edit
+                                </button>
+                                <button 
+                                    onclick="openPublicKeyModal('{{ inst.id }}', '{{ inst.installation_code }}')" 
+                                    class="btn btn-secondary btn-sm" 
+                                    title="Kelola Public Key Ed25519"
+                                >
+                                    🔑 Kunci
+                                </button>
+                                {% if inst.status == 'ACTIVE' %}
+                                <button 
+                                    onclick="toggleInstallationStatus('{{ inst.id }}', 'SUSPENDED')" 
+                                    class="btn btn-secondary btn-sm" 
+                                    style="border-color: rgba(239, 68, 68, 0.4); color: #f87171;" 
+                                    title="Nonaktifkan (Suspend) Server Ini"
+                                >
+                                    ⛔ Suspend
+                                </button>
+                                {% else %}
+                                <button 
+                                    onclick="toggleInstallationStatus('{{ inst.id }}', 'ACTIVE')" 
+                                    class="btn btn-secondary btn-sm" 
+                                    style="border-color: rgba(16, 185, 129, 0.4); color: #34d399;" 
+                                    title="Aktifkan Kembali Server Ini"
+                                >
+                                    ✅ Aktifkan
+                                </button>
+                                {% endif %}
+                                <button 
+                                    onclick="confirmDeleteInstallation('{{ inst.id }}', '{{ inst.name | e }}')" 
+                                    class="btn btn-secondary btn-sm" 
+                                    style="border-color: rgba(239, 68, 68, 0.6); color: #f87171;" 
+                                    title="Hapus Instalasi (Cek Relasi Lisensi)"
+                                >
+                                    🗑️
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="9" style="text-align: center; padding: 40px; color: var(--text-muted);">
+                            <div style="font-size: 28px; margin-bottom: 8px;">🖥️</div>
+                            Belum ada server instalasi terdaftar. Klik <strong>Daftarkan Instalasi Baru</strong> untuk memulai.
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- MODAL 1: DAFTARKAN INSTALASI BARU -->
+<!-- ========================================================================= -->
+<div id="modalNewInstallation" class="modal-overlay">
+    <div class="modal-container" style="max-width: 650px;">
+        <div class="modal-header">
+            <div class="modal-title"><span>➕</span> Daftarkan Server Instalasi SIMPATI</div>
+            <button class="modal-close" onclick="closeModal('modalNewInstallation')">&times;</button>
+        </div>
+        <form id="formNewInstallation">
+            <div class="modal-body">
+                <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+                    Daftarkan server instansi SIMPATI 555 baru di bawah organisasi pelanggan. Sistem akan otomatis menerbitkan kredensial API dan identitas instalasi.
+                </p>
+
+                <div class="form-group">
+                    <label class="form-label">Organisasi Pelanggan <span style="color: #f87171;">*</span></label>
+                    <select id="instCustomerId" class="form-control" required>
+                        <option value="">-- Pilih Organisasi Pelanggan --</option>
+                        {% if customers %}
+                            {% for c in customers %}
+                                <option value="{{ c.id }}">{{ c.organization_name }} ({{ c.customer_code }})</option>
+                            {% endfor %}
+                        {% endif %}
+                    </select>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <div class="form-group">
+                        <label class="form-label">Nama Server Deployment <span style="color: #f87171;">*</span></label>
+                        <input type="text" id="instName" class="form-control" placeholder="Contoh: Server SIMPATI Jabar Utama" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Kode Instalasi (Opsional)</label>
+                        <input type="text" id="instCode" class="form-control" placeholder="Kosongkan untuk auto-generate">
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px;">
+                    <div class="form-group">
+                        <label class="form-label">Lingkungan <span style="color: #f87171;">*</span></label>
+                        <select id="instEnvironment" class="form-control" required>
+                            <option value="PRODUCTION" selected>PRODUCTION</option>
+                            <option value="STAGING">STAGING</option>
+                            <option value="DEVELOPMENT">DEVELOPMENT</option>
+                            <option value="DISASTER_RECOVERY">DISASTER RECOVERY</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Domain / Host Server</label>
+                        <input type="text" id="instDomain" class="form-control" placeholder="simpati.jabar.org">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">IP Server</label>
+                        <input type="text" id="instIp" class="form-control" placeholder="103.14.22.5">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Hardware Signature / ID Mesin (Opsional)</label>
+                    <input type="text" id="instHardwareSig" class="form-control" placeholder="UUID motherboard, MAC hash, atau CPU identifier">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Public Key Ed25519 (Format PEM - Opsional)</label>
+                    <textarea id="instPublicKeyPem" class="form-control font-mono" rows="3" placeholder="-----BEGIN PUBLIC KEY-----&#10;...&#10;-----END PUBLIC KEY-----"></textarea>
+                    <span style="font-size: 11px; color: var(--text-muted);">Dapat diisikan nanti saat server SIMPATI melakukan enrollment awal.</span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('modalNewInstallation')">Batal</button>
+                <button type="submit" class="btn btn-primary">Daftarkan &amp; Terbitkan Kredensial</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- MODAL 2: KREDENSIAL BARU DITERBITKAN (ONE-TIME VIEW) -->
+<!-- ========================================================================= -->
+<div id="modalCredentialsSuccess" class="modal-overlay">
+    <div class="modal-container" style="max-width: 650px; border-color: #34d399;">
+        <div class="modal-header">
+            <div class="modal-title" style="color: #34d399;"><span>🔐</span> Kredensial API Instalasi Berhasil Diterbitkan</div>
+            <button class="modal-close" onclick="closeModal('modalCredentialsSuccess')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+                <strong style="color: #f87171;">⚠️ PENTING: Salin Kredensial Sekarang</strong>
+                <p style="font-size: 12px; color: var(--text-main); margin-top: 4px;">
+                    Client Secret hanya ditampilkan <strong>satu kali</strong> pada saat pembuatan. Simpan secret ini di file konfigurasi server SIMPATI target.
+                </p>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Kode Instalasi</label>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="successInstCode" class="form-control font-mono" readonly>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="copyToClipboard('successInstCode')">Salin</button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Client ID</label>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="successClientId" class="form-control font-mono" readonly>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="copyToClipboard('successClientId')">Salin</button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Client Secret (Plaintext)</label>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="successClientSecret" class="form-control font-mono" style="color: #34d399; font-weight: bold;" readonly>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="copyToClipboard('successClientSecret')">Salin</button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Contoh Konfigurasi .env Server SIMPATI</label>
+                <textarea id="successEnvSnippet" class="form-control font-mono" rows="6" readonly style="font-size: 11px;"></textarea>
+                <button type="button" class="btn btn-secondary btn-sm" style="margin-top: 6px;" onclick="copyToClipboard('successEnvSnippet')">📋 Salin Seluruh Konfigurasi .env</button>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-primary" onclick="closeModal('modalCredentialsSuccess'); window.location.reload();">Selesai &amp; Muat Ulang Halaman</button>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- MODAL 3: DETAIL LENGKAP INSTALASI (MULTI-TAB) -->
+<!-- ========================================================================= -->
+<div id="modalInstallationDetail" class="modal-overlay">
+    <div class="modal-container" style="max-width: 850px;">
+        <div class="modal-header">
+            <div class="modal-title"><span>🖥️</span> Profil &amp; Kredensial Server Deployment</div>
+            <button class="modal-close" onclick="closeModal('modalInstallationDetail')">&times;</button>
+        </div>
+        <div class="modal-body" style="padding-top: 14px;">
+            <!-- Installation Header Banner -->
+            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0, 0, 0, 0.4); border: 1px solid var(--border-color); border-radius: 8px; padding: 14px 18px; margin-bottom: 16px;">
+                <div>
+                    <h3 id="detInstName" style="color: var(--gold-light); font-size: 17px; margin: 0 0 4px 0;">-</h3>
+                    <div style="font-size: 12px; color: var(--text-muted);">
+                        Kode: <span id="detInstCode" class="font-mono" style="color: var(--text-main); font-weight: bold;">-</span> &bull; 
+                        Pelanggan: <strong id="detCustName" style="color: var(--gold-light);">-</strong>
+                    </div>
+                </div>
+                <div style="text-align: right;">
+                    <span id="detInstStatusBadge" class="badge badge-active">-</span>
+                    <div id="detInstEnvBadge" style="margin-top: 4px;" class="badge badge-gold">-</div>
+                </div>
+            </div>
+
+            <!-- Tab Navigation -->
+            <div class="tabs-nav" style="display: flex; gap: 8px; border-bottom: 1px solid var(--border-color); margin-bottom: 18px;">
+                <button class="tab-btn active" onclick="switchInstTab('tab-inst-overview')">📋 Ringkasan &amp; Server</button>
+                <button class="tab-btn" onclick="switchInstTab('tab-inst-credentials')">🔐 Kredensial API (<span id="detCredCount">0</span>)</button>
+                <button class="tab-btn" onclick="switchInstTab('tab-inst-events')">📡 Telemetry &amp; Log (<span id="detEventCount">0</span>)</button>
+                <button class="tab-btn" onclick="switchInstTab('tab-inst-integration')">⚙️ Integrasi SIMPATI</button>
+            </div>
+
+            <!-- TAB 1: Ringkasan Server -->
+            <div id="tab-inst-overview" class="tab-pane active">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px;">
+                    <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 6px; padding: 12px;">
+                        <span style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Host &amp; Jaringan</span>
+                        <div style="margin-top: 6px; font-size: 13px;">
+                            <div>Domain: <strong id="detDomain" class="font-mono">-</strong></div>
+                            <div style="margin-top: 4px;">IP Server: <strong id="detIp" class="font-mono">-</strong></div>
+                            <div style="margin-top: 4px;">Heartbeat Terakhir: <strong id="detHeartbeat">-</strong></div>
+                        </div>
+                    </div>
+                    <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 6px; padding: 12px;">
+                        <span style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Hardware &amp; Identitas</span>
+                        <div style="margin-top: 6px; font-size: 13px;">
+                            <div>Hardware Sig: <strong id="detHardwareSig" class="font-mono" style="font-size: 11px;">-</strong></div>
+                            <div style="margin-top: 4px;">Terdaftar: <strong id="detCreatedAt">-</strong></div>
+                            <div style="margin-top: 4px;">Lisensi Terhubung: <strong id="detLicenseCount">0</strong></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 6px; padding: 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <span style="font-size: 11px; color: var(--gold-light); text-transform: uppercase; font-weight: bold;">Kunci Publik Ed25519 (Asimetris)</span>
+                        <span id="detKeyFingerprintBadge" class="badge badge-secondary font-mono" style="font-size: 10px;">Belum Ada</span>
+                    </div>
+                    <pre id="detPublicKeyPem" class="font-mono" style="background: #0d090a; border: 1px solid var(--border-color); border-radius: 4px; padding: 10px; font-size: 10px; color: #a5b4fc; max-height: 110px; overflow-y: auto; white-space: pre-wrap; margin: 0;">Belum ada public key terdaftar untuk server ini.</pre>
+                </div>
+            </div>
+
+            <!-- TAB 2: Kredensial API -->
+            <div id="tab-inst-credentials" class="tab-pane" style="display: none;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <span style="font-size: 13px; color: var(--text-muted);">
+                        Kredensial digunakan oleh daemon/server SIMPATI untuk sinkronisasi lisensi dan validasi heartbeat.
+                    </span>
+                    <button id="btnRotateCreds" class="btn btn-secondary btn-sm" style="border-color: var(--gold-primary);">
+                        🔄 Rotasi Kredensial Baru
+                    </button>
+                </div>
+                <div class="table-responsive">
+                    <table class="data-table" style="font-size: 12px;">
+                        <thead>
+                            <tr>
+                                <th>Client ID</th>
+                                <th>Status</th>
+                                <th>Dibuat Pada</th>
+                                <th>Dicabut Pada</th>
+                            </tr>
+                        </thead>
+                        <tbody id="detCredentialsTableBody">
+                            <!-- Populated via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- TAB 3: Telemetry & Activity Events -->
+            <div id="tab-inst-events" class="tab-pane" style="display: none;">
+                <div class="table-responsive">
+                    <table class="data-table" style="font-size: 11px;">
+                        <thead>
+                            <tr>
+                                <th>Waktu</th>
+                                <th>Event Type</th>
+                                <th>IP Pengirim</th>
+                                <th>Payload / Ringkasan</th>
+                            </tr>
+                        </thead>
+                        <tbody id="detEventsTableBody">
+                            <!-- Populated via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- TAB 4: Integrasi SIMPATI -->
+            <div id="tab-inst-integration" class="tab-pane" style="display: none;">
+                <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+                    Salin variabel lingkungan berikut ke dalam file <code>.env</code> aplikasi SIMPATI 555 di server pelanggan untuk menghubungkan instalasi dengan License Manager pusat.
+                </p>
+                <div class="form-group">
+                    <label class="form-label">Konfigurasi .env Terpasang</label>
+                    <textarea id="detIntegrationEnv" class="form-control font-mono" rows="8" readonly style="font-size: 11px;"></textarea>
+                    <button type="button" class="btn btn-secondary btn-sm" style="margin-top: 8px;" onclick="copyToClipboard('detIntegrationEnv')">
+                        📋 Salin Snippet Konfigurasi
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('modalInstallationDetail')">Tutup</button>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- MODAL 4: EDIT DATA INSTALASI -->
+<!-- ========================================================================= -->
+<div id="modalEditInstallation" class="modal-overlay">
+    <div class="modal-container" style="max-width: 600px;">
+        <div class="modal-header">
+            <div class="modal-title"><span>✏️</span> Edit Informasi Server Instalasi</div>
+            <button class="modal-close" onclick="closeModal('modalEditInstallation')">&times;</button>
+        </div>
+        <form id="formEditInstallation">
+            <input type="hidden" id="editInstId">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">Nama Server Deployment <span style="color: #f87171;">*</span></label>
+                    <input type="text" id="editInstName" class="form-control" required>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <div class="form-group">
+                        <label class="form-label">Domain / Host Server</label>
+                        <input type="text" id="editInstDomain" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">IP Server</label>
+                        <input type="text" id="editInstIp" class="form-control">
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <div class="form-group">
+                        <label class="form-label">Lingkungan</label>
+                        <select id="editInstEnvironment" class="form-control">
+                            <option value="PRODUCTION">PRODUCTION</option>
+                            <option value="STAGING">STAGING</option>
+                            <option value="DEVELOPMENT">DEVELOPMENT</option>
+                            <option value="DISASTER_RECOVERY">DISASTER RECOVERY</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Hardware Signature</label>
+                        <input type="text" id="editInstHardwareSig" class="form-control">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('modalEditInstallation')">Batal</button>
+                <button type="submit" class="btn btn-primary">Simpan Perubahan</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- MODAL 5: KELOLA PUBLIC KEY (Ed25519) -->
+<!-- ========================================================================= -->
+<div id="modalPublicKey" class="modal-overlay">
+    <div class="modal-container" style="max-width: 600px;">
+        <div class="modal-header">
+            <div class="modal-title"><span>🔑</span> Pendaftaran / Pembaruan Public Key Ed25519</div>
+            <button class="modal-close" onclick="closeModal('modalPublicKey')">&times;</button>
+        </div>
+        <form id="formPublicKey">
+            <input type="hidden" id="pubKeyInstId">
+            <div class="modal-body">
+                <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 14px;">
+                    Kunci publik asimetris ini digunakan oleh server pusat untuk memverifikasi tanda tangan kriptografis dari instalasi server SIMPATI yang bersangkutan.
+                </p>
+                <div class="form-group">
+                    <label class="form-label">Public Key (Format PEM Standard) <span style="color: #f87171;">*</span></label>
+                    <textarea id="pubKeyPemText" class="form-control font-mono" rows="6" placeholder="-----BEGIN PUBLIC KEY-----&#10;MCowBQYDK2VwAyEA...&#10;-----END PUBLIC KEY-----" required></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('modalPublicKey')">Batal</button>
+                <button type="submit" class="btn btn-primary">Daftarkan Kunci Publik</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- MODAL 6: KONFIRMASI HAPUS INSTALASI -->
+<!-- ========================================================================= -->
+<div id="modalDeleteInstallation" class="modal-overlay">
+    <div class="modal-container" style="max-width: 500px; border-color: #ef4444;">
+        <div class="modal-header">
+            <div class="modal-title" style="color: #f87171;"><span>🗑️</span> Konfirmasi Hapus Instalasi</div>
+            <button class="modal-close" onclick="closeModal('modalDeleteInstallation')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p style="font-size: 13px; margin-bottom: 12px;">
+                Apakah Anda yakin ingin menghapus server instalasi <strong id="delInstName" style="color: var(--gold-light);">-</strong>?
+            </p>
+            <div style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 12px; font-size: 12px; color: var(--text-main);">
+                Pemeriksaan relasi: Server instalasi tidak dapat dihapus jika masih terikat dengan lisensi komersial aktif. Seluruh kredensial dan riwayat event akan dihapus bersamaan.
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('modalDeleteInstallation')">Batal</button>
+            <button type="button" id="btnExecuteDeleteInst" class="btn btn-primary" style="background: #ef4444; border-color: #dc2626; color: #fff;">
+                Ya, Hapus Instalasi
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}

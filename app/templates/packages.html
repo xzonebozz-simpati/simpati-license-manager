@@ -1,0 +1,347 @@
+{% extends "base.html" %}
+
+{% block title %}Paket Lisensi - SIMPATI License Manager{% endblock %}
+{% block header_title %}Katalog &amp; Konfigurasi Paket Lisensi SIMPATI 555{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">
+            <span>📦</span> Katalog Paket Komersial Penawaran
+        </div>
+        <button onclick="openModal('modalNewPackage')" class="btn btn-primary">
+            <span>➕</span> Tambah Paket Baru
+        </button>
+    </div>
+    <div class="table-responsive">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Kode Paket</th>
+                    <th>Nama Paket</th>
+                    <th>Tier</th>
+                    <th>Deskripsi Ringkas</th>
+                    <th>Bundel Modul Bawaan</th>
+                    <th>Status</th>
+                    <th style="text-align: center; min-width: 170px;">Aksi</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if packages %}
+                    {% for p in packages %}
+                    <tr id="row-pkg-{{ p.id }}">
+                        <td class="font-mono"><strong>{{ p.package_code }}</strong></td>
+                        <td><strong style="color: var(--gold-light);">{{ p.package_name }}</strong></td>
+                        <td>
+                            {% if p.default_tier == 'ENTERPRISE' %}
+                                <span class="badge badge-gold">ENTERPRISE</span>
+                            {% elif p.default_tier == 'PROFESSIONAL' %}
+                                <span class="badge badge-active">PROFESSIONAL</span>
+                            {% elif p.default_tier == 'CUSTOM' %}
+                                <span class="badge" style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.4);">CUSTOM</span>
+                            {% else %}
+                                <span class="badge badge-secondary">{{ p.default_tier }}</span>
+                            {% endif %}
+                        </td>
+                        <td style="font-size: 12px; color: var(--text-muted);">
+                            {{ p.description.split('<!--CONFIG:')[0] if p.description else '-' }}
+                        </td>
+                        <td>
+                            {% for pm in p.package_modules %}
+                                <span class="badge badge-gold" style="font-size: 10px; margin-right: 4px; margin-bottom: 2px;">{{ pm.module.module_code }}</span>
+                            {% else %}
+                                <span style="color: var(--text-muted); font-size: 12px;">Standard Core</span>
+                            {% endfor %}
+                        </td>
+                        <td>
+                            {% if p.is_active %}
+                                <span class="badge badge-active">&bull; AKTIF</span>
+                            {% else %}
+                                <span class="badge badge-revoked">&bull; NON-AKTIF</span>
+                            {% endif %}
+                        </td>
+                        <td style="text-align: center;">
+                            <div style="display: inline-flex; gap: 4px; justify-content: center;">
+                                <button 
+                                    onclick="viewPackageDetail('{{ p.id }}')" 
+                                    class="btn btn-secondary btn-sm" 
+                                    title="Lihat Detail Paket"
+                                >
+                                    👁️ Detail
+                                </button>
+                                <button 
+                                    onclick="openEditPackage('{{ p.id }}')" 
+                                    class="btn btn-secondary btn-sm" 
+                                    title="Edit Paket"
+                                >
+                                    ✏️ Edit
+                                </button>
+                                {% if p.is_active %}
+                                <button 
+                                    onclick="togglePackageStatus('{{ p.id }}', false)" 
+                                    class="btn btn-secondary btn-sm" 
+                                    style="border-color: rgba(239, 68, 68, 0.4); color: #f87171;" 
+                                    title="Nonaktifkan Paket"
+                                >
+                                    ⛔ Nonaktif
+                                </button>
+                                {% else %}
+                                <button 
+                                    onclick="togglePackageStatus('{{ p.id }}', true)" 
+                                    class="btn btn-secondary btn-sm" 
+                                    style="border-color: rgba(16, 185, 129, 0.4); color: #34d399;" 
+                                    title="Aktifkan Paket"
+                                >
+                                    ✅ Aktifkan
+                                </button>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="7" style="text-align: center; padding: 40px; color: var(--text-muted);">
+                            Belum ada paket komersial terdaftar. Klik <strong>Tambah Paket Baru</strong> untuk membuat penawaran.
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- MODAL 1: TAMBAH PAKET BARU -->
+<!-- ========================================================================= -->
+<div id="modalNewPackage" class="modal-overlay">
+    <div class="modal-container" style="max-width: 680px;">
+        <div class="modal-header">
+            <div class="modal-title"><span>➕</span> Tambah Paket Komersial Baru</div>
+            <button class="modal-close" onclick="closeModal('modalNewPackage')">&times;</button>
+        </div>
+        <form id="formNewPackage">
+            <div class="modal-body">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <div class="form-group">
+                        <label class="form-label">Kode Paket <span style="color: #f87171;">*</span></label>
+                        <input type="text" id="newPkgCode" class="form-control font-mono" placeholder="Contoh: PKG-ENTERPRISE-PLUS" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Nama Paket <span style="color: #f87171;">*</span></label>
+                        <input type="text" id="newPkgName" class="form-control" placeholder="Contoh: Paket Wilayah Khusus" required>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px;">
+                    <div class="form-group">
+                        <label class="form-label">Tier Lisensi <span style="color: #f87171;">*</span></label>
+                        <select id="newPkgTier" class="form-control" required>
+                            <option value="STARTER">STARTER</option>
+                            <option value="PROFESSIONAL">PROFESSIONAL</option>
+                            <option value="ENTERPRISE" selected>ENTERPRISE</option>
+                            <option value="CUSTOM">CUSTOM</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Periode Default</label>
+                        <select id="newPkgPeriod" class="form-control">
+                            <option value="TAHUNAN" selected>TAHUNAN (1 Tahun)</option>
+                            <option value="BULANAN">BULANAN (1 Bulan)</option>
+                            <option value="PERPETUAL">PERPETUAL (Tetap)</option>
+                            <option value="CUSTOM">FLEKSIBEL / KONTRAK</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Maks Anggota Bawaan</label>
+                        <input type="number" id="newPkgMaxMembers" class="form-control" value="50000" min="1">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Deskripsi Paket</label>
+                    <textarea id="newPkgDesc" class="form-control" rows="2" placeholder="Penjelasan cakupan paket dan target pengguna..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Modul Yang Tersedia Dalam Paket <span style="color: #f87171;">*</span></label>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 12px; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 6px; border: 1px solid var(--border-color);">
+                        {% if all_modules %}
+                            {% for m in all_modules %}
+                            <label style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                                <input type="checkbox" name="pkg_modules" value="{{ m.module_code }}" {% if m.is_core or m.module_code == 'CORE' %}checked{% endif %}>
+                                <span><strong>{{ m.module_code }}</strong> <small style="color: var(--text-muted);">({{ m.module_name }})</small></span>
+                            </label>
+                            {% endfor %}
+                        {% else %}
+                            <label><input type="checkbox" name="pkg_modules" value="CORE" checked> CORE</label>
+                            <label><input type="checkbox" name="pkg_modules" value="DATA" checked> DATA</label>
+                            <label><input type="checkbox" name="pkg_modules" value="SURVEI_GPS" checked> SURVEI_GPS</label>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Tingkat Organisasi Yang Diizinkan</label>
+                    <div style="display: flex; gap: 16px; font-size: 12px; background: rgba(0,0,0,0.3); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--border-color);">
+                        <label style="cursor: pointer;"><input type="checkbox" name="pkg_levels" value="DPD" checked> DPD (Provinsi)</label>
+                        <label style="cursor: pointer;"><input type="checkbox" name="pkg_levels" value="DPC" checked> DPC (Kab/Kota)</label>
+                        <label style="cursor: pointer;"><input type="checkbox" name="pkg_levels" value="DPS" checked> DPS (Kecamatan)</label>
+                        <label style="cursor: pointer;"><input type="checkbox" name="pkg_levels" value="DPSS" checked> DPSS (Desa/Kelurahan)</label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('modalNewPackage')">Batal</button>
+                <button type="submit" class="btn btn-primary">Simpan &amp; Tambahkan Paket</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- MODAL 2: EDIT PAKET -->
+<!-- ========================================================================= -->
+<div id="modalEditPackage" class="modal-overlay">
+    <div class="modal-container" style="max-width: 680px;">
+        <div class="modal-header">
+            <div class="modal-title"><span>✏️</span> Edit Paket Komersial</div>
+            <button class="modal-close" onclick="closeModal('modalEditPackage')">&times;</button>
+        </div>
+        <form id="formEditPackage">
+            <input type="hidden" id="editPkgId">
+            <div class="modal-body">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <div class="form-group">
+                        <label class="form-label">Kode Paket</label>
+                        <input type="text" id="editPkgCode" class="form-control font-mono" readonly style="background: rgba(0,0,0,0.5);">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Nama Paket <span style="color: #f87171;">*</span></label>
+                        <input type="text" id="editPkgName" class="form-control" required>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px;">
+                    <div class="form-group">
+                        <label class="form-label">Tier Lisensi</label>
+                        <select id="editPkgTier" class="form-control">
+                            <option value="STARTER">STARTER</option>
+                            <option value="PROFESSIONAL">PROFESSIONAL</option>
+                            <option value="ENTERPRISE">ENTERPRISE</option>
+                            <option value="CUSTOM">CUSTOM</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Periode Default</label>
+                        <select id="editPkgPeriod" class="form-control">
+                            <option value="TAHUNAN">TAHUNAN</option>
+                            <option value="BULANAN">BULANAN</option>
+                            <option value="PERPETUAL">PERPETUAL</option>
+                            <option value="CUSTOM">FLEKSIBEL / KONTRAK</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Maks Anggota Bawaan</label>
+                        <input type="number" id="editPkgMaxMembers" class="form-control" min="1">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Deskripsi Paket</label>
+                    <textarea id="editPkgDesc" class="form-control" rows="2"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Modul Yang Tersedia Dalam Paket</label>
+                    <div id="editPkgModulesContainer" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 12px; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 6px; border: 1px solid var(--border-color);">
+                        {% if all_modules %}
+                            {% for m in all_modules %}
+                            <label style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                                <input type="checkbox" name="edit_pkg_modules" value="{{ m.module_code }}">
+                                <span><strong>{{ m.module_code }}</strong></span>
+                            </label>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Tingkat Organisasi Yang Diizinkan</label>
+                    <div style="display: flex; gap: 16px; font-size: 12px; background: rgba(0,0,0,0.3); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--border-color);">
+                        <label style="cursor: pointer;"><input type="checkbox" name="edit_pkg_levels" value="DPD"> DPD</label>
+                        <label style="cursor: pointer;"><input type="checkbox" name="edit_pkg_levels" value="DPC"> DPC</label>
+                        <label style="cursor: pointer;"><input type="checkbox" name="edit_pkg_levels" value="DPS"> DPS</label>
+                        <label style="cursor: pointer;"><input type="checkbox" name="edit_pkg_levels" value="DPSS"> DPSS</label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('modalEditPackage')">Batal</button>
+                <button type="submit" class="btn btn-primary">Simpan Perubahan Paket</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- MODAL 3: DETAIL PAKET -->
+<!-- ========================================================================= -->
+<div id="modalPackageDetail" class="modal-overlay">
+    <div class="modal-container" style="max-width: 600px;">
+        <div class="modal-header">
+            <div class="modal-title"><span>📦</span> Spesifikasi Detail Paket</div>
+            <button class="modal-close" onclick="closeModal('modalPackageDetail')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.35); padding: 14px 18px; border-radius: 8px; border: 1px solid var(--border-color); margin-bottom: 16px;">
+                <div>
+                    <h3 id="detPkgName" style="color: var(--gold-light); font-size: 17px; margin: 0 0 4px 0;">-</h3>
+                    <div style="font-size: 12px; color: var(--text-muted);">
+                        Kode: <span id="detPkgCode" class="font-mono" style="color: var(--text-main); font-weight: bold;">-</span>
+                    </div>
+                </div>
+                <div style="text-align: right;">
+                    <span id="detPkgTierBadge" class="badge badge-gold">-</span>
+                    <div id="detPkgStatusBadge" style="margin-top: 4px;" class="badge badge-active">-</div>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; font-size: 12px;">
+                <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 6px; padding: 12px;">
+                    <span style="color: var(--text-muted); text-transform: uppercase;">Konfigurasi Komersial</span>
+                    <div style="margin-top: 6px;">Periode: <strong id="detPkgPeriod">-</strong></div>
+                    <div style="margin-top: 4px;">Kapasitas Anggota: <strong id="detPkgMaxMembers">-</strong></div>
+                </div>
+                <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 6px; padding: 12px;">
+                    <span style="color: var(--text-muted); text-transform: uppercase;">Statistik Penggunaan</span>
+                    <div style="margin-top: 6px;">Lisensi Menggunakan: <strong id="detPkgTotalLic" style="color: var(--gold-light);">0</strong></div>
+                    <div style="margin-top: 4px;">Dibuat: <strong id="detPkgCreatedAt">-</strong></div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Deskripsi</label>
+                <div id="detPkgDesc" style="font-size: 12px; color: var(--text-main); background: rgba(0,0,0,0.2); padding: 10px; border-radius: 4px; border: 1px solid var(--border-color);">-</div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Bundel Modul Bawaan Paket</label>
+                <div id="detPkgModulesList" style="display: flex; flex-wrap: wrap; gap: 6px;">
+                    <!-- Populated via JS -->
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Tingkat Organisasi Tercover</label>
+                <div id="detPkgLevelsList" style="display: flex; gap: 6px;">
+                    <!-- Populated via JS -->
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('modalPackageDetail')">Tutup</button>
+        </div>
+    </div>
+</div>
+{% endblock %}

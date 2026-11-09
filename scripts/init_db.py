@@ -1,0 +1,286 @@
+"""Database initialization, table creation, and initial seeding script."""
+
+import os
+import sys
+from pathlib import Path
+
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import logging
+from datetime import datetime, timezone, timedelta
+from app.database.connection import engine
+from app.database.session import SessionLocal
+from app.models.base import Base
+from app.models.user import LicenseUser
+from app.models.catalog import LicensePackage, ModuleRegistry, ModuleDependency, PackageModule
+from app.models.customer import Customer
+from app.models.installation import Installation
+from app.models.license import License, LicenseCapacity
+from app.models.region import Region
+from app.models.security import SigningKey
+from app.models.operations import SystemSetting, LicenseAuditLog
+from app.security.hashing import hash_password
+from app.security.crypto import generate_ed25519_keypair
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("simpati.scripts.init_db")
+
+
+def seed_initial_data():
+    """Seeds default modules, packages, administrative user, and settings if not present."""
+    db = SessionLocal()
+    try:
+        # 1. Superadmin User
+        superadmin = db.query(LicenseUser).filter(LicenseUser.username == "superadmin").first()
+        if not superadmin:
+            logger.info("Membuat akun default License Superadmin...")
+            superadmin = LicenseUser(
+                username="superadmin",
+                email="superadmin@simpati555.id",
+                full_name="SIMPATI License Superadmin",
+                password_hash=hash_password("SuperAdmin@2026!"),
+                role="SUPERADMIN",
+                is_active=True
+            )
+            db.add(superadmin)
+            db.flush()
+
+        # 2. Module Registry
+        module_definitions = [
+            ("CORE", "Core Platform SIMPATI", "Fondasi sistem inti, otentikasi, dan pengaturan", True),
+            ("DATA", "Kependudukan & Anggota", "Pengelolaan basis data anggota organisasi dan KTP", False),
+            ("SURVEI_GPS", "Survei Lapangan & GPS", "Pemetaan geolokasi, tracking GPS, dan validasi lapangan", False),
+            ("UMKM", "Pemberdayaan UMKM", "Katalog binaan, verifikasi usaha, dan rekapitulasi bantuan", False),
+            ("REPORT_ADV", "Pelaporan Lanjutan", "Analitik demografi, ekspor agregat, dan grafik kinerja", False),
+            ("FINANCE", "Keuangan & Iuran", "Catatan iuran anggota, pembukuan kas, dan donasi", False),
+            ("COOP", "Koperasi Anggota", "Simpan pinjam, sisa hasil usaha, dan unit usaha bersama", False),
+            ("SOCIAL", "Bantuan Sosial", "Penyaluran logistik bantuan dan program kemanusiaan", False),
+            ("ASSET", "Inventaris & Aset", "Pendataan aset fisik, kendaraan dinas, dan inventaris kantor", False),
+        ]
+
+        created_modules = {}
+        for code, name, desc, is_core in module_definitions:
+            mod = db.query(ModuleRegistry).filter(ModuleRegistry.module_code == code).first()
+            if not mod:
+                mod = ModuleRegistry(
+                    module_code=code,
+                    module_name=name,
+                    description=desc,
+                    is_core=is_core,
+                    is_active=True
+                )
+                db.add(mod)
+                db.flush()
+            created_modules[code] = mod
+
+        # 3. Module Dependencies
+        dependencies_map = [
+            ("SURVEI_GPS", "CORE"),
+            ("SURVEI_GPS", "DATA"),
+            ("UMKM", "CORE"),
+            ("UMKM", "DATA"),
+            ("REPORT_ADV", "CORE"),
+            ("REPORT_ADV", "DATA"),
+            ("FINANCE", "CORE"),
+            ("COOP", "CORE"),
+            ("COOP", "FINANCE"),
+            ("SOCIAL", "CORE"),
+            ("SOCIAL", "DATA"),
+            ("ASSET", "CORE"),
+        ]
+
+        for mod_code, req_code in dependencies_map:
+            if mod_code in created_modules and req_code in created_modules:
+                mod_id = created_modules[mod_code].id
+                req_id = created_modules[req_code].id
+                dep_exists = db.query(ModuleDependency).filter(
+                    ModuleDependency.module_id == mod_id,
+                    ModuleDependency.required_module_id == req_id
+                ).first()
+                if not dep_exists:
+                    db.add(ModuleDependency(module_id=mod_id, required_module_id=req_id))
+
+        # 4. License Packages
+        package_definitions = [
+            ("PKG-STARTER", "Paket Pemula", "STANDARD", "Akses modul dasar CORE dan DATA anggota organisasi"),
+            ("PKG-PROFESSIONAL", "Paket Profesional", "PREMIUM", "Modul CORE, DATA, SURVEI_GPS, UMKM, dan REPORT_ADV"),
+            ("PKG-ENTERPRISE", "Paket Lengkap Nasional", "ENTERPRISE", "Seluruh modul aplikasi SIMPATI 555 tanpa batasan fitur"),
+        ]
+
+        created_packages = {}
+        for code, name, tier, desc in package_definitions:
+            pkg = db.query(LicensePackage).filter(LicensePackage.package_code == code).first()
+            if not pkg:
+                pkg = LicensePackage(
+                    package_code=code,
+                    package_name=name,
+                    default_tier=tier,
+                    description=desc,
+                    is_active=True
+                )
+                db.add(pkg)
+                db.flush()
+            created_packages[code] = pkg
+
+        # 5. Link Package Modules
+        starter_mods = ["CORE", "DATA"]
+        for m_code in starter_mods:
+            if m_code in created_modules and "PKG-STARTER" in created_packages:
+                link = db.query(PackageModule).filter(
+                    PackageModule.package_id == created_packages["PKG-STARTER"].id,
+                    PackageModule.module_id == created_modules[m_code].id
+                ).first()
+                if not link:
+                    db.add(PackageModule(
+                        package_id=created_packages["PKG-STARTER"].id,
+                        module_id=created_modules[m_code].id,
+                        is_mandatory=True
+                    ))
+
+        pro_mods = ["CORE", "DATA", "SURVEI_GPS", "UMKM", "REPORT_ADV"]
+        for m_code in pro_mods:
+            if m_code in created_modules and "PKG-PROFESSIONAL" in created_packages:
+                link = db.query(PackageModule).filter(
+                    PackageModule.package_id == created_packages["PKG-PROFESSIONAL"].id,
+                    PackageModule.module_id == created_modules[m_code].id
+                ).first()
+                if not link:
+                    db.add(PackageModule(
+                        package_id=created_packages["PKG-PROFESSIONAL"].id,
+                        module_id=created_modules[m_code].id,
+                        is_mandatory=True
+                    ))
+
+        # 6. Indonesian Master Regions (National Master Sample)
+        sample_regions = [
+            ("32", "JAWA BARAT", "PROVINSI", None),
+            ("31", "DKI JAKARTA", "PROVINSI", None),
+            ("33", "JAWA TENGAH", "PROVINSI", None),
+            ("35", "JAWA TIMUR", "PROVINSI", None),
+        ]
+        for r_code, r_name, r_lvl, r_parent in sample_regions:
+            reg = db.query(Region).filter(Region.region_code == r_code).first()
+            if not reg:
+                db.add(Region(region_code=r_code, name=r_name, level=r_lvl, is_active=True))
+
+        # 7. System Settings
+        default_settings = [
+            ("default_grace_period_days", "7", "INTEGER", "Durasi toleransi keterlambatan validasi (hari)"),
+            ("token_validation_interval_hours", "24", "INTEGER", "Interval berkala verifikasi token (jam)"),
+            ("allow_restricted_mode", "true", "BOOLEAN", "Izinkan akses terbatas read-only saat grace period terlampaui"),
+            ("signing_key_identifier", "KEY-SIMPATI-ROOT-V1", "STRING", "ID kunci Ed25519 aktif yang menerbitkan sertifikat"),
+        ]
+        for key, val, dt, desc in default_settings:
+            setting = db.query(SystemSetting).filter(SystemSetting.setting_key == key).first()
+            if not setting:
+                db.add(SystemSetting(
+                    setting_key=key,
+                    setting_value=val,
+                    data_type=dt,
+                    description=desc,
+                    is_encrypted=False,
+                    updated_by=superadmin.id if superadmin else None
+                ))
+
+        # 8. Cryptographic Signing Key Record
+        signing_key_id = "KEY-SIMPATI-ROOT-V1"
+        key_record = db.query(SigningKey).filter(SigningKey.key_identifier == signing_key_id).first()
+        if not key_record:
+            _, pub_pem = generate_ed25519_keypair()
+            db.add(SigningKey(
+                key_identifier=signing_key_id,
+                algorithm="Ed25519",
+                public_key_pem=pub_pem,
+                key_vault_reference="vault:simpati-license-root-key",
+                is_active=True
+            ))
+
+        # 9. Initial Customer, Installation, & Active Commercial License for instant local readiness
+        cust = db.query(Customer).filter(Customer.customer_code == "CUST-2026-DPD-JABAR").first()
+        if not cust:
+            cust = Customer(
+                customer_code="CUST-2026-DPD-JABAR",
+                organization_name="Dewan Pimpinan Daerah SIMPATI Jawa Barat",
+                contact_person="Ir. H. Budi Santoso, M.T.",
+                contact_email="kontak@simpatijabar.id",
+                contact_phone="+62 812-3456-7890",
+                address="Jl. R.E. Martadinata No. 555, Bandung, Jawa Barat",
+                status="ACTIVE",
+                notes="Pelanggan Perdana SIMPATI Tingkat Provinsi"
+            )
+            db.add(cust)
+            db.flush()
+
+            # Installation
+            inst = Installation(
+                customer_id=cust.id,
+                installation_code="INST-2026-DPD-01",
+                name="Server Produksi Cloud DPD Jabar",
+                server_domain="jabar.simpati555.id",
+                server_ip="103.144.20.10",
+                environment="PRODUCTION",
+                status="ACTIVE",
+                last_heartbeat_at=datetime.now(timezone.utc)
+            )
+            db.add(inst)
+            db.flush()
+
+            # License
+            now = datetime.now(timezone.utc)
+            lic = License(
+                license_key="SMP-LIC-2026-A1B2-C3D4",
+                customer_id=cust.id,
+                package_id=created_packages["PKG-PROFESSIONAL"].id,
+                license_type="COMMERCIAL",
+                status="ACTIVE",
+                valid_from=now - timedelta(days=10),
+                valid_until=now + timedelta(days=355),
+                grace_period_days=7,
+                max_installations=1,
+                snapshot_entitlements='{"modules": ["CORE", "DATA", "SURVEI_GPS", "UMKM", "REPORT_ADV"], "levels": ["DPD", "DPC"]}',
+                notes="Lisensi Tahunan Komersial Resmi DPD Jawa Barat"
+            )
+            db.add(lic)
+            db.flush()
+
+            # Capacity
+            db.add(LicenseCapacity(
+                license_id=lic.id,
+                max_members=100000,
+                max_accounts=250,
+                max_concurrent_users=30,
+                max_storage_mb=40960
+            ))
+
+            # Audit Log
+            db.add(LicenseAuditLog(
+                user_id=superadmin.id if superadmin else None,
+                action_category="SYSTEM",
+                action_name="INITIAL_SEEDING",
+                target_resource="system",
+                details='{"status": "Fondasi SIMPATI License Manager berhasil diinisialisasi"}',
+                status="SUCCESS"
+            ))
+
+        db.commit()
+        logger.info("Inisialisasi database dan seeding data awal berhasil.")
+    except Exception as exc:
+        db.rollback()
+        logger.error(f"Gagal saat seeding database: {exc}")
+        raise
+    finally:
+        db.close()
+
+
+def main():
+    """Initializes tables and seeds data."""
+    print("Membuat seluruh tabel skema database...")
+    Base.metadata.create_all(bind=engine)
+    print("Menyemai data awal (Superadmin, Modul, Paket, Pengaturan)...")
+    seed_initial_data()
+    print("Database siap digunakan.")
+
+
+if __name__ == "__main__":
+    main()

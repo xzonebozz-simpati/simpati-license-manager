@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Riwayat - SIMPATI License Manager{% endblock %}
+{% block header_title %}Riwayat Perubahan & Transisi Status Lisensi{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">
+            <span>⏱️</span> Log Transisi Siklus Hidup Lisensi
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Waktu Kejadian</th>
+                    <th>Kunci Lisensi</th>
+                    <th>Aksi Transisi</th>
+                    <th>Keterangan / Alasan</th>
+                    <th>Pelaksana</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if history %}
+                    {% for h in history %}
+                    <tr>
+                        <td class="font-mono">{{ h.created_at.strftime('%d-%m-%Y %H:%M:%S') }}</td>
+                        <td class="font-mono"><strong>{{ h.license.license_key if h.license else '-' }}</strong></td>
+                        <td><span class="badge badge-gold">{{ h.action }}</span></td>
+                        <td>{{ h.remarks or '-' }}</td>
+                        <td>{{ h.performed_by.username if h.performed_by else 'Sistem Otomatis' }}</td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="5" style="text-align: center; padding: 32px; color: var(--text-muted);">
+                            Belum ada riwayat transisi status lisensi.
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
