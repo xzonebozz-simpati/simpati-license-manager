@@ -89,11 +89,20 @@ class Settings(BaseSettings):
 
     @property
     def normalized_database_url(self) -> str:
-        """Normalizes DATABASE_URL for SQLAlchemy 2.0 (converts postgres:// to postgresql://)."""
+        """Normalize PostgreSQL URL to use psycopg v3."""
         url = self.DATABASE_URL.strip()
-        if url.startswith("postgres://"):
-            url = url.replace("postgres://", "postgresql://", 1)
-        return url
+
+       if url.startswith("postgres://"):
+           url = url.replace("postgres://", "postgresql://", 1)
+
+       if url.startswith("postgresql://"):
+           url = url.replace(
+               "postgresql://",
+               "postgresql+psycopg://",
+               1
+           )
+
+       return url
 
     @property
     def cors_origins_list(self) -> List[str]:
