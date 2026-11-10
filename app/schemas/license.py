@@ -108,3 +108,24 @@ class LicenseValidationResponse(BaseModel):
     next_validation_due: datetime
     signed_payload: str
     signature: str
+
+
+class LicenseActivationRequest(BaseModel):
+    """Client-side activation request using License Key."""
+    license_key: str = Field(..., min_length=5, max_length=100, description="License Key resmi dari License Manager")
+    server_domain: Optional[str] = Field(None, description="Domain/hostname server klien")
+    server_ip: Optional[str] = Field(None, description="IP address server klien")
+    instance_name: Optional[str] = Field(None, description="Nama identitas instalasi")
+    environment: str = Field(default="PRODUCTION", description="Environment klien (PRODUCTION/STAGING/DEVELOPMENT)")
+
+
+class LicenseActivationResponse(BaseModel):
+    """Response containing provisioned credentials and initial validation result."""
+    success: bool
+    message: str
+    license_key: str
+    installation_code: str
+    client_id: str
+    client_secret: str
+    server_url: str
+    validation_result: Dict[str, Any]

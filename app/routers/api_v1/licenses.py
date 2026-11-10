@@ -13,6 +13,8 @@ from app.schemas.license import (
     LicenseExtend,
     LicenseStatusUpdate,
     LicenseDetailResponse,
+    LicenseActivationRequest,
+    LicenseActivationResponse,
 )
 from app.services.license_service import (
     issue_license,
@@ -23,9 +25,43 @@ from app.services.license_service import (
     bind_installation_to_license,
     get_root_public_key,
 )
+from app.services.validation_service import activate_client_license
 from app.security.dependencies import require_authenticated_user
+from fastapi import Request
 
 router = APIRouter(prefix="/api/v1/licenses", tags=["Licenses"])
+
+
+@router.post("/activate", summary="Activate License Client-side", response_model=LicenseActivationResponse)
+def activate_license_alias_endpoint(
+    payload: LicenseActivationRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Alias endpoint aktivasi lisensi dari sisi klien SIMPATI 555."""
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    base_url = str(request.base_url).rstrip("/")
+    try:
+        res = activate_client_license(
+            db=db,
+            license_key=payload.license_key,
+            server_domain=payload.server_domain,
+            server_ip=payload.server_ip or client_ip,
+            instance_name=payload.instance_name,
+            environment=payload.environment,
+        )
+        res["server_url"] = base_url
+        return res
+    except ValueError as ve:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(ve),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Terjadi kesalahan saat mengaktifkan lisensi: {str(e)}",
+        )
 
 
 @router.get("", summary="List Commercial Licenses")

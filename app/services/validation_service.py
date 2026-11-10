@@ -266,3 +266,146 @@ def validate_installation_license(
         "signature_format": "hex",
         "signature_base64": signature_b64
     }
+
+
+def activate_client_license(
+    db: Session,
+    license_key: str,
+    server_domain: str | None = None,
+    server_ip: str | None = None,
+    instance_name: str | None = None,
+    environment: str = "PRODUCTION",
+) -> Dict[str, Any]:
+    """Mengaktifkan lisensi dari sisi klien SIMPATI 555 menggunakan License Key.
+
+    Otomatis:
+    1. Memverifikasi validitas License Key, pelanggan, status, dan masa berlaku.
+    2. Menghubungkan atau membuat identitas instalasi secara otomatis.
+    3. Menerbitkan/merotasi kredensial M2M (client_id & client_secret) yang aman.
+    4. Mengaktifkan lisensi jika sebelumnya berstatus DRAFT.
+    5. Menjalankan validasi awal lengkap dengan snapshot dan tanda tangan digital Ed25519.
+    """
+    from app.models.customer import Customer
+    from app.models.installation import Installation, InstallationCredential
+    from app.services.installation_service import (
+        generate_installation_code,
+        generate_client_credentials,
+        rotate_installation_credentials,
+    )
+    from app.services.license_service import ensure_utc
+
+    key_clean = (license_key or "").strip()
+    if not key_clean:
+        raise ValueError("License Key tidak boleh kosong.")
+
+    # 1. Cari Lisensi
+    lic = db.query(License).filter(License.license_key == key_clean).first()
+    if not lic:
+        raise ValueError(
+            f"License Key '{key_clean}' tidak ditemukan dalam sistem pusat. "
+            "Pastikan License Key yang dimasukkan benar dan telah diterbitkan oleh administrator."
+        )
+
+    # 2. Periksa Organisasi Pelanggan
+    customer = db.query(Customer).filter(Customer.id == lic.customer_id).first()
+    if not customer or customer.status != "ACTIVE":
+        raise ValueError("Organisasi pelanggan pemilik lisensi ini sedang dinonaktifkan.")
+
+    # 3. Periksa Status Lisensi & Masa Berlaku
+    now = datetime.now(timezone.utc)
+    if lic.status in ["REVOKED", "TERMINATED"]:
+        raise ValueError(f"Lisensi ini berstatus '{lic.status}' dan telah dicabut. Tidak dapat diaktifkan.")
+    if lic.status == "SUSPENDED":
+        raise ValueError("Lisensi ini sedang ditangguhkan (SUSPENDED). Hubungi administrator SIMPATI.")
+
+    v_until = ensure_utc(lic.valid_until)
+    if v_until and v_until < now:
+        raise ValueError("Masa berlaku lisensi ini telah kedaluwarsa.")
+
+    # 4. Hubungkan atau Buat Instalasi
+    existing_link = (
+        db.query(LicenseInstallation)
+        .filter(LicenseInstallation.license_id == lic.id, LicenseInstallation.is_active == True)
+        .first()
+    )
+
+    if existing_link:
+        inst = db.query(Installation).filter(Installation.id == existing_link.installation_id).first()
+        if not inst:
+            raise ValueError("Data instalasi terdaftar tidak ditemukan.")
+        # Rotasi kredensial agar klien mendapatkan plaintext client_secret baru
+        cred_res = rotate_installation_credentials(db, inst.id)
+        if not cred_res:
+            raise ValueError("Gagal memperbarui kredensial instalasi.")
+        client_id, client_secret = cred_res
+        if server_domain:
+            inst.server_domain = server_domain
+        if server_ip:
+            inst.server_ip = server_ip
+        inst.status = "ACTIVE"
+    else:
+        active_count = (
+            db.query(LicenseInstallation)
+            .filter(LicenseInstallation.license_id == lic.id, LicenseInstallation.is_active == True)
+            .count()
+        )
+        if active_count >= lic.max_installations:
+            raise ValueError(
+                f"Batas maksimum instalasi ({lic.max_installations}) untuk lisensi ini sudah terpenuhi."
+            )
+
+        inst_code = generate_installation_code(customer.customer_code)
+        inst_title = instance_name or f"Instalasi SIMPATI {customer.organization_name}"
+        inst = Installation(
+            customer_id=customer.id,
+            installation_code=inst_code,
+            name=inst_title,
+            server_domain=server_domain,
+            server_ip=server_ip,
+            environment=environment,
+            status="ACTIVE",
+        )
+        db.add(inst)
+        db.flush()
+
+        client_id, client_secret, secret_hash = generate_client_credentials()
+        cred = InstallationCredential(
+            installation_id=inst.id,
+            client_id=client_id,
+            client_secret_hash=secret_hash,
+            is_active=True,
+        )
+        db.add(cred)
+
+        new_link = LicenseInstallation(
+            license_id=lic.id,
+            installation_id=inst.id,
+            is_active=True,
+        )
+        db.add(new_link)
+
+    # Aktifkan lisensi jika statusnya masih DRAFT
+    if lic.status == "DRAFT":
+        lic.status = "ACTIVE"
+
+    db.commit()
+    db.refresh(inst)
+    db.refresh(lic)
+
+    # 5. Lakukan validasi awal untuk snapshot lisensi terverifikasi
+    val_res = validate_installation_license(
+        db=db,
+        license_key=lic.license_key,
+        installation_code=inst.installation_code,
+        request_ip=server_ip or "127.0.0.1",
+    )
+
+    return {
+        "success": True,
+        "message": "Lisensi SIMPATI 555 berhasil diaktifkan.",
+        "license_key": lic.license_key,
+        "installation_code": inst.installation_code,
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "validation_result": val_res,
+    }

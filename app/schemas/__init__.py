@@ -40,6 +40,8 @@ from app.schemas.license import (
     LicenseDetailResponse,
     LicenseValidationRequest,
     LicenseValidationResponse,
+    LicenseActivationRequest,
+    LicenseActivationResponse,
 )
 
 __all__ = [
@@ -79,4 +81,6 @@ __all__ = [
     "LicenseDetailResponse",
     "LicenseValidationRequest",
     "LicenseValidationResponse",
+    "LicenseActivationRequest",
+    "LicenseActivationResponse",
 ]
