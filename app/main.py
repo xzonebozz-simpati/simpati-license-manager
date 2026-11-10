@@ -1,6 +1,7 @@
 """FastAPI application factory, lifespan handler, exception handlers, and security middleware."""
 
 import logging
+import hashlib
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, Request, status
@@ -20,6 +21,15 @@ from app.security import (
     verify_csrf_token
 )
 from scripts.init_db import seed_initial_data
+
+def _compute_static_version() -> str:
+    """Hitung hash MD5 dari app.js untuk cache busting otomatis."""
+    try:
+        js_path = Path(__file__).resolve().parent / "static" / "js" / "app.js"
+        return hashlib.md5(js_path.read_bytes()).hexdigest()[:8]
+    except Exception:
+        import time
+        return str(int(time.time()))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -78,6 +88,7 @@ def create_application() -> FastAPI:
         if request.method in ["POST", "PUT", "PATCH", "DELETE"]:
             exempt_paths = [
                 "/api/v1/validations/verify",
+                "/api/v1/validations/preview",
                 "/api/v1/installations/heartbeat",
                 "/api/v1/auth/login",
                 "/login"
@@ -104,6 +115,10 @@ def create_application() -> FastAPI:
     static_path = BASE_DIR / "static"
     if static_path.exists():
         app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
+
+    # Inject app_version global ke semua Jinja2 templates untuk cache busting
+    from app.routers.web import templates
+    templates.env.globals["app_version"] = _compute_static_version()
 
     # Include Routers
     app.include_router(health_router)
