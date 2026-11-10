@@ -198,9 +198,20 @@ def validate_installation_license(
         "public_registration_blocked": is_restricted
     }
 
+    pkg_name = license_obj.package.package_name if license_obj.package else "Paket Lengkap Nasional Enterprise"
+    cust_name = license_obj.customer.organization_name if license_obj.customer else "Ikatan Persaudaraan Lima Lima Lima (555)"
+    v_from = license_obj.valid_from.isoformat() if license_obj.valid_from else now.isoformat()
+    v_until = license_obj.valid_until.isoformat() if license_obj.valid_until else (now + timedelta(days=365)).isoformat()
+
     validation_payload = {
+        "product_name": "SIMPATI 555",
+        "package_name": pkg_name,
+        "customer_name": cust_name,
+        "territory_scope": "Nasional & Wilayah Terdaftar",
         "license_key": license_key,
         "installation_code": installation_code,
+        "valid_from": v_from,
+        "valid_until": v_until,
         "validation_status": status,
         "is_restricted_mode": is_restricted,
         "validated_at": now.isoformat(),
@@ -236,8 +247,14 @@ def validate_installation_license(
     return {
         "validation_token": validation_token,
         "validation_status": status,
+        "product_name": "SIMPATI 555",
+        "package_name": pkg_name,
+        "customer_name": cust_name,
+        "territory_scope": "Nasional & Wilayah Terdaftar",
         "license_key": license_key,
         "installation_code": installation_code,
+        "valid_from": v_from,
+        "valid_until": v_until,
         "next_validation_due": next_due.isoformat(),
         "is_restricted_mode": is_restricted,
         "allowed_modules": allowed_modules,

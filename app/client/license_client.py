@@ -221,8 +221,14 @@ class LicenseClient:
         # Simpan ke cache lokal
         cached = {
             "validation_status": resp_data.get("validation_status", "UNKNOWN"),
+            "product_name": payload.get("product_name") or resp_data.get("product_name") or "SIMPATI 555",
+            "package_name": payload.get("package_name") or resp_data.get("package_name") or "Paket Lengkap Nasional Enterprise",
+            "customer_name": payload.get("customer_name") or resp_data.get("customer_name") or "Ikatan Persaudaraan Lima Lima Lima (555)",
+            "territory_scope": payload.get("territory_scope") or resp_data.get("territory_scope") or "Nasional & Seluruh Wilayah Terdaftar",
             "license_key": self.config.license_key,
             "installation_code": self.config.installation_code,
+            "valid_from": payload.get("valid_from") or resp_data.get("valid_from"),
+            "valid_until": payload.get("valid_until") or resp_data.get("valid_until"),
             "is_restricted_mode": bool(resp_data.get("is_restricted_mode", False)),
             "is_offline": False,
             "grace_type": "CONTRACT_GRACE" if resp_data.get("validation_status") == "GRACE_PERIOD" else "NONE",
@@ -441,6 +447,130 @@ class LicenseClient:
         if self._bg_thread and self._bg_thread.is_alive():
             self._bg_thread.join(timeout=2)
 
+    def get_license_display_info(self, principal: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Menyusun data lisensi terverifikasi untuk disajikan di seluruh dashboard SIMPATI 555.
+        
+        Satu sumber data aman (tanpa rahasia/private key/secret), sesuai hak akses role.
+        """
+        state = self.load_cached_state() or self.get_license_state()
+        if not state:
+            state = {
+                "validation_status": "UNVERIFIED",
+                "is_restricted_mode": True,
+                "is_offline": True,
+                "grace_type": "NONE"
+            }
+
+        payload = state.get("payload") or {}
+        now = datetime.now(timezone.utc)
+        
+        # 1. Hitung sisa masa tenggang offline
+        validated_at_raw = state.get("validated_at")
+        offline_grace_remaining = "-"
+        if validated_at_raw:
+            try:
+                v_dt = datetime.fromisoformat(validated_at_raw)
+                deadline = v_dt + timedelta(days=self.config.offline_grace_period_days)
+                diff = deadline - now
+                if diff.total_seconds() > 0:
+                    d = diff.days
+                    h = int(diff.seconds // 3600)
+                    offline_grace_remaining = f"{d} hari {h} jam"
+                else:
+                    offline_grace_remaining = "Masa tenggang offline telah habis"
+            except Exception:
+                pass
+
+        # 2. Modul SIMPATI 555
+        allowed_modules = set(state.get("allowed_modules", []))
+        is_restricted = bool(state.get("is_restricted_mode", False))
+        
+        CATALOG_MODULES = [
+            {"code": "CORE", "name": "Sistem Pendaftaran & Master Data Anggota", "desc": "Pendaftaran pendaftar baru, verifikasi KTP, dan database keanggotaan"},
+            {"code": "DATA", "name": "Verifikasi Identitas & Dokumen", "desc": "Pemeriksaan foto diri, foto KTP, dan arsip dokumen anggota"},
+            {"code": "SURVEI_GPS", "name": "Pelacakan Lapangan GPS & Integrasi UMKM", "desc": "Survei lapangan titik koordinat GPS dan integrasi pelaku UMKM"},
+            {"code": "UMKM", "name": "Modul Usaha & Pendataan Pelaku UMKM", "desc": "Pencatatan dan pemberdayaan unit usaha anggota persaudaraan"},
+            {"code": "REPORT_ADV", "name": "Ekspor Dokumen Lanjutan (PDF & CSV)", "desc": "Pencetakan rekapitulasi massal, ekspor spreadsheet, dan dokumen SK"},
+            {"code": "OFFICERS_MANAGEMENT", "name": "Manajemen Personel & Akun Petugas", "desc": "Struktur hierarki kepengurusan wilayah DPD, DPC, DPS, DPSS"},
+            {"code": "SK_APPROVAL", "name": "Pengesahan Surat Keputusan Elektronik", "desc": "Penerbitan SK kepengurusan dengan nomor otomatis dan segel digital"},
+            {"code": "FINANCIAL_LEDGER", "name": "Keuangan & Pembukuan Kas Organisasi", "desc": "Manajemen iuran anggota dan laporan keuangan organisasi"},
+            {"code": "AI_ANALYTICS", "name": "Analitik Prediktif Berbasis AI", "desc": "Analisis pertumbuhan keanggotaan dan proyeksi wilayah"}
+        ]
+
+        modules_display = []
+        for mod in CATALOG_MODULES:
+            active = (mod["code"] in allowed_modules) and (not is_restricted)
+            status_lbl = "AKTIF" if active else ("DITANGGUHKAN" if (mod["code"] in allowed_modules and is_restricted) else "TIDAK DILISENSIKAN")
+            modules_display.append({
+                "code": mod["code"],
+                "name": mod["name"],
+                "desc": mod["desc"],
+                "is_active": active,
+                "status_label": status_lbl
+            })
+
+        # 3. Kapasitas
+        raw_cap = state.get("capacity") or payload.get("capacity") or {}
+        capacity_display = {
+            "max_members": f"{raw_cap.get('max_members', 50000):,}".replace(",", "."),
+            "max_accounts": f"{raw_cap.get('max_accounts', 200):,}".replace(",", "."),
+            "max_concurrent_users": f"{raw_cap.get('max_concurrent_users', 25):,}".replace(",", "."),
+            "max_storage_mb": f"{raw_cap.get('max_storage_mb', 20480):,}".replace(",", ".") + " MB (~20 GB)"
+        }
+
+        # 4. Scope hak akses sesuai tingkat akun (DPD, DPC, DPS, DPSS)
+        user_role = (principal.get("role") if principal else "GUEST") or "GUEST"
+        user_scope = principal.get("scope_name") if principal else None
+        
+        if user_role == "SUPERADMIN":
+            scope_badge = "Superadmin (Akses Penuh Seluruh Tingkat)"
+        elif user_role in ["ADMIN", "ADMIN_PUSAT"]:
+            scope_badge = "Admin Pusat (Akses Penuh Seluruh Tingkat)"
+        elif "DPD" in user_role:
+            scope_badge = f"Admin DPD - {user_scope or 'Wilayah DPD Terdaftar'}"
+        elif "DPC" in user_role:
+            scope_badge = f"Admin DPC - {user_scope or 'Wilayah DPC Terdaftar'}"
+        elif "DPSS" in user_role:
+            scope_badge = f"Admin DPSS - {user_scope or 'Wilayah DPSS Terdaftar'}"
+        elif "DPS" in user_role:
+            scope_badge = f"Admin DPS - {user_scope or 'Wilayah DPS Terdaftar'}"
+        else:
+            scope_badge = f"Akses Wilayah: {user_role}"
+
+        # 5. Format tanggal
+        def _fmt(dt_str):
+            if not dt_str: return "-"
+            try:
+                d = datetime.fromisoformat(str(dt_str).replace("Z", "+00:00"))
+                return d.strftime("%d %B %Y %H:%M WIB")
+            except Exception:
+                return str(dt_str)
+
+        return {
+            "product_name": state.get("product_name") or payload.get("product_name") or "SIMPATI 555",
+            "package_name": state.get("package_name") or payload.get("package_name") or "Paket Lengkap Nasional Enterprise",
+            "customer_name": state.get("customer_name") or payload.get("customer_name") or "Ikatan Persaudaraan Lima Lima Lima (555)",
+            "territory_scope": state.get("territory_scope") or payload.get("territory_scope") or "Nasional (Seluruh Wilayah Indonesia)",
+            "license_key": state.get("license_key") or self.config.license_key,
+            "installation_code": state.get("installation_code") or self.config.installation_code,
+            "client_id": self.config.client_id,  # Kredensial publik aman, BUKAN secret
+            "allowed_levels": state.get("allowed_levels") or payload.get("allowed_levels") or ["DPD", "DPC", "DPS", "DPSS"],
+            "valid_from": _fmt(state.get("valid_from") or payload.get("valid_from")),
+            "valid_until": _fmt(state.get("valid_until") or payload.get("valid_until")),
+            "validation_status": state.get("validation_status", "UNVERIFIED"),
+            "is_restricted_mode": is_restricted,
+            "is_offline": bool(state.get("is_offline", False)),
+            "connection_status": "OFFLINE (Koneksi Terputus)" if state.get("is_offline") else "ONLINE (Terhubung ke License Manager)",
+            "last_validated_at": _fmt(state.get("validated_at")),
+            "next_validation_due": _fmt(state.get("next_validation_due")),
+            "grace_type": state.get("grace_type", "NONE"),
+            "offline_grace_remaining": offline_grace_remaining,
+            "modules": modules_display,
+            "capacity": capacity_display,
+            "user_scope_badge": scope_badge,
+            "user_role": user_role
+        }
+
 
 # ============================================================================
 # 4. Middleware Penegakan Restricted Mode di FastAPI (Point 5)
@@ -535,3 +665,385 @@ class LicenseRestrictedMiddleware(BaseHTTPMiddleware):
             return HTMLResponse(content=error_html, status_code=403)
 
         return await call_next(request)
+
+
+# ============================================================================
+# 5. Penyajian Informasi Lisensi untuk Seluruh Dashboard (Point 1, 2, 3, 4, 5)
+# ============================================================================
+
+def render_license_info_html(display_info: Dict[str, Any], back_url: str = "/admin") -> str:
+    """Merender halaman HTML responsif Informasi Lisensi sesuai tema resmi SIMPATI 555.
+    
+    Tersedia untuk Superadmin, Admin Pusat, Admin DPD, Admin DPC, Admin DPS, dan Admin DPSS.
+    100% Read-Only, aman tanpa membocorkan rahasia.
+    """
+    status = display_info.get("validation_status", "UNVERIFIED")
+    is_restricted = display_info.get("is_restricted_mode", False)
+    is_offline = display_info.get("is_offline", False)
+    grace_type = display_info.get("grace_type", "NONE")
+
+    # Warna & label status
+    if status == "ACTIVE":
+        status_bg = "#064e3b"
+        status_border = "#059669"
+        status_text = "#34d399"
+        status_icon = "🟢"
+        status_label = "LENGKAP & AKTIF"
+    elif status == "GRACE_PERIOD":
+        status_bg = "#78350f"
+        status_border = "#d97706"
+        status_text = "#fbbf24"
+        status_icon = "⚠️"
+        status_label = f"MASA TENGGANG ({'OFFLINE' if is_offline else 'KONTRAK'})"
+    elif status == "RESTRICTED":
+        status_bg = "#7f1d1d"
+        status_border = "#dc2626"
+        status_text = "#f87171"
+        status_icon = "🔴"
+        status_label = "RESTRICTED MODE (TERBATAS)"
+    else:
+        status_bg = "#374151"
+        status_border = "#6b7280"
+        status_text = "#d1d5db"
+        status_icon = "⚪"
+        status_label = status
+
+    conn_color = "#ef4444" if is_offline else "#10b981"
+    conn_icon = "🔴" if is_offline else "🟢"
+
+    # Baris tabel modul
+    modules_rows = []
+    for mod in display_info.get("modules", []):
+        if mod["is_active"]:
+            badge_html = "<span style='background:#064e3b;color:#34d399;border:1px solid #059669;padding:3px 8px;border-radius:4px;font-weight:700;font-size:0.75rem'>AKTIF</span>"
+        elif "DITANGGUHKAN" in mod["status_label"]:
+            badge_html = "<span style='background:#7f1d1d;color:#f87171;border:1px solid #dc2626;padding:3px 8px;border-radius:4px;font-weight:700;font-size:0.75rem'>DITANGGUHKAN</span>"
+        else:
+            badge_html = "<span style='background:#374151;color:#9ca3af;border:1px solid #4b5563;padding:3px 8px;border-radius:4px;font-weight:600;font-size:0.75rem'>TIDAK BERLISENSI</span>"
+
+        modules_rows.append(f"""
+        <tr style='border-bottom:1px solid #3d161d'>
+            <td style='padding:10px 14px;font-family:monospace;color:#d4af37;font-weight:700'>{mod['code']}</td>
+            <td style='padding:10px 14px'>
+                <div style='font-weight:600;color:#fbf6ec'>{mod['name']}</div>
+                <div style='font-size:0.8rem;color:#bcaaa4'>{mod['desc']}</div>
+            </td>
+            <td style='padding:10px 14px;text-align:center'>{badge_html}</td>
+        </tr>
+        """)
+    modules_table_html = "".join(modules_rows)
+
+    # Tingkat organisasi badge
+    level_badges = " ".join([
+        f"<span style='background:#2a1015;border:1px solid #d4af37;color:#d4af37;padding:3px 8px;border-radius:4px;font-size:0.75rem;font-weight:700;margin-right:4px'>{lvl}</span>"
+        for lvl in display_info.get("allowed_levels", [])
+    ])
+
+    cap = display_info.get("capacity", {})
+
+    return f"""<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Informasi Lisensi | SIMPATI 555</title>
+<style>
+:root {{
+    --maroon: #4a0e17;
+    --maroon2: #6b1424;
+    --dark-bg: #1c080c;
+    --card-bg: #2b1117;
+    --gold: #d4af37;
+    --cream: #fbf6ec;
+    --border: #4a1820;
+}}
+* {{ box-sizing: border-box; }}
+body {{
+    margin: 0;
+    font-family: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    color: var(--cream);
+    background: var(--dark-bg);
+    line-height: 1.55;
+    padding-bottom: 40px;
+}}
+.top {{
+    background: var(--maroon);
+    border-bottom: 2px solid var(--gold);
+    padding: 14px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+}}
+.brand {{
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-family: Georgia, serif;
+    font-size: 1.25rem;
+    font-weight: bold;
+    color: var(--gold);
+}}
+.btn {{
+    display: inline-block;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+    border: 0;
+    transition: 0.2s;
+}}
+.btn-gold {{
+    background: var(--gold);
+    color: var(--maroon);
+}}
+.btn-gold:hover {{ background: #e6c24f; }}
+.btn-outline {{
+    background: transparent;
+    border: 1px solid var(--gold);
+    color: var(--gold);
+}}
+.btn-outline:hover {{ background: rgba(212,175,55,0.15); }}
+.container {{
+    max-width: 1180px;
+    margin: 24px auto;
+    padding: 0 16px;
+}}
+.grid {{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 20px;
+    margin-bottom: 24px;
+}}
+.card {{
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+}}
+.card-header {{
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--gold);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 10px;
+}}
+.info-row {{
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    font-size: 0.9rem;
+}}
+.info-label {{
+    color: #bcaaa4;
+    font-weight: 500;
+}}
+.info-value {{
+    font-weight: 600;
+    text-align: right;
+    color: #fff;
+    word-break: break-all;
+}}
+.status-banner {{
+    background: {status_bg};
+    border: 2px solid {status_border};
+    border-radius: 10px;
+    padding: 18px 24px;
+    margin-bottom: 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+}}
+.status-title {{
+    font-size: 1.3rem;
+    font-weight: 800;
+    color: {status_text};
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}}
+.table-wrap {{
+    overflow-x: auto;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 24px;
+}}
+table {{
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}}
+th {{
+    background: #38141b;
+    color: var(--gold);
+    padding: 12px 14px;
+    text-align: left;
+    font-weight: 700;
+    border-bottom: 2px solid var(--border);
+}}
+.notice-box {{
+    background: rgba(212,175,55,0.08);
+    border: 1px solid rgba(212,175,55,0.3);
+    border-radius: 8px;
+    padding: 14px;
+    font-size: 0.85rem;
+    color: #e0d4c0;
+    margin-top: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}}
+</style>
+</head>
+<body>
+
+<header class="top">
+    <div class="brand">
+        <span>🛡️ SIMPATI 555</span>
+        <span style="font-size:0.9rem;color:#e0d4c0;font-family:sans-serif;font-weight:normal">| Informasi Lisensi Resmi</span>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center">
+        <span style="font-size:0.85rem;color:var(--gold)">{display_info.get('user_scope_badge')}</span>
+        <a href="{back_url}" class="btn btn-outline">← Kembali ke Dashboard</a>
+    </div>
+</header>
+
+<main class="container">
+
+    <!-- Status Banner Utama -->
+    <section class="status-banner">
+        <div>
+            <div class="status-title">{status_icon} Status Lisensi: {status_label}</div>
+            <div style="font-size:0.9rem;color:#e5e7eb;margin-top:4px">
+                Produk: <b>{display_info.get('product_name')}</b> · Paket: <b>{display_info.get('package_name')}</b>
+            </div>
+        </div>
+        <div style="text-align:right">
+            <span style="font-size:0.85rem;color:#bcaaa4">Koneksi License Manager:</span><br>
+            <b style="color:{conn_color}">{conn_icon} {display_info.get('connection_status')}</b>
+        </div>
+    </section>
+
+    <!-- Grid Kartu Informasi -->
+    <div class="grid">
+        
+        <!-- Kartu 1: Identitas Lisensi -->
+        <div class="card">
+            <div class="card-header">📄 Identitas Lisensi & Pelanggan</div>
+            <div class="info-row">
+                <span class="info-label">Pemegang Lisensi</span>
+                <span class="info-value">{display_info.get('customer_name')}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Cakupan Wilayah</span>
+                <span class="info-value">{display_info.get('territory_scope')}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">License Key</span>
+                <span class="info-value" style="font-family:monospace;color:var(--gold)">{display_info.get('license_key')}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Installation Code</span>
+                <span class="info-value" style="font-family:monospace">{display_info.get('installation_code')}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Client ID (M2M)</span>
+                <span class="info-value" style="font-family:monospace">{display_info.get('client_id') or '-'}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Tingkat Diizinkan</span>
+                <span class="info-value">{level_badges}</span>
+            </div>
+        </div>
+
+        <!-- Kartu 2: Masa Berlaku & Siklus Validasi -->
+        <div class="card">
+            <div class="card-header">⏳ Masa Berlaku & Validasi</div>
+            <div class="info-row">
+                <span class="info-label">Tanggal Mulai</span>
+                <span class="info-value">{display_info.get('valid_from')}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Tanggal Berakhir</span>
+                <span class="info-value">{display_info.get('valid_until')}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Validasi Terakhir</span>
+                <span class="info-value">{display_info.get('last_validated_at')}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Validasi Berikutnya</span>
+                <span class="info-value">{display_info.get('next_validation_due')}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Jenis Grace Period</span>
+                <span class="info-value">{grace_type}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Sisa Offline Grace</span>
+                <span class="info-value" style="color:{'#f59e0b' if is_offline else '#34d399'}">{display_info.get('offline_grace_remaining')}</span>
+            </div>
+        </div>
+
+        <!-- Kartu 3: Kapasitas & Kuota Paket -->
+        <div class="card">
+            <div class="card-header">📊 Kapasitas & Kuota Paket</div>
+            <div class="info-row">
+                <span class="info-label">Maksimal Anggota</span>
+                <span class="info-value" style="color:var(--gold);font-size:1.05rem">{cap.get('max_members', '-')}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Maksimal Akun Petugas</span>
+                <span class="info-value">{cap.get('max_accounts', '-')}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Pengguna Bersamaan</span>
+                <span class="info-value">{cap.get('max_concurrent_users', '-')} sesi</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Penyimpanan Dokumen</span>
+                <span class="info-value">{cap.get('max_storage_mb', '-')}</span>
+            </div>
+            <div class="notice-box">
+                <span>🔒 Hak Akses: Seluruh tingkat kewenangan memiliki akses baca resmi. Pengelolaan lisensi hanya dilakukan dari SIMPATI License Manager.</span>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Tabel Daftar Seluruh Modul -->
+    <section class="table-wrap">
+        <div style="padding:14px 18px;font-weight:700;color:var(--gold);font-size:1.05rem;border-bottom:1px solid var(--border)">
+            🧩 Daftar Modul & Status Fungsionalitas Aplikasi
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th style="width:180px">KODE MODUL</th>
+                    <th>NAMA MODUL & DESKRIPSI</th>
+                    <th style="width:160px;text-align:center">STATUS HAK AKSES</th>
+                </tr>
+            </thead>
+            <tbody>
+                {modules_table_html}
+            </tbody>
+        </table>
+    </section>
+
+</main>
+
+</body>
+</html>
+"""
