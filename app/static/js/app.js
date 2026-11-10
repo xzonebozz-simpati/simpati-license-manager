@@ -1075,7 +1075,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Quick Test Validation Trigger
     window.testValidation = async function(licenseKey, installationCode) {
         try {
-            const res = await fetch('/api/v1/validations/verify', {
+            const res = await fetch('/api/v1/validations/preview', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -1085,12 +1085,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({
                     license_key: licenseKey,
                     installation_code: installationCode,
-                    nonce: 'test-nonce-' + Date.now(),
+                    nonce: 'dashboard-preview-' + Date.now(),
                     timestamp: new Date().toISOString()
                 })
             });
             const data = await res.json();
-            alert(`Hasil Validasi Online:\nStatus: ${data.validation_status}\nRestricted Mode: ${data.is_restricted_mode ? 'AKTIF' : 'NON-AKTIF'}\nToken: ${data.validation_token}\nJatuh Tempo Berikutnya: ${data.next_validation_due}`);
+            if (!res.ok) {
+                alert('Gagal validasi: ' + (data.detail || 'Terjadi kesalahan pada server.'));
+                return;
+            }
+            const statusEmoji = data.validation_status === 'ACTIVE' ? '?' :
+                                data.validation_status === 'GRACE_PERIOD' ? '??' : '?';
+            alert(
+                ` Hasil Uji Validasi Lisensi\n` +
+                `-----------------------------\n` +
+                `Status        : ${data.validation_status}\n` +
+                `Restricted Mode: ${data.is_restricted_mode ? '?? AKTIF' : '?? NON-AKTIF'}\n` +
+                `Instalasi     : ${installationCode}\n` +
+                `Jatuh Tempo   : ${data.next_validation_due ? new Date(data.next_validation_due).toLocaleString('id-ID') : '-'}\n` +
+                `Token         : ${data.validation_token}`
+            );
         } catch (err) {
             alert('Gagal menghubungi endpoint validasi: ' + err.message);
         }
