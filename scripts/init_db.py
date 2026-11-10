@@ -8,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import logging
+import secrets
 from datetime import datetime, timezone, timedelta
 from app.database.connection import engine
 from app.database.session import SessionLocal
@@ -15,8 +16,8 @@ from app.models.base import Base
 from app.models.user import LicenseUser
 from app.models.catalog import LicensePackage, ModuleRegistry, ModuleDependency, PackageModule
 from app.models.customer import Customer
-from app.models.installation import Installation
-from app.models.license import License, LicenseCapacity
+from app.models.installation import Installation, InstallationCredential
+from app.models.license import License, LicenseCapacity, LicenseInstallation
 from app.models.region import Region
 from app.models.security import SigningKey
 from app.config import get_settings
@@ -265,6 +266,38 @@ def seed_initial_data():
                 details='{"status": "Fondasi SIMPATI License Manager berhasil diinisialisasi"}',
                 status="SUCCESS"
             ))
+
+        # 10. Auto-healing: Ensure initial seed installation & license are bound and have active credentials
+        default_inst = db.query(Installation).filter(Installation.installation_code == "INST-2026-DPD-01").first()
+        default_lic = db.query(License).filter(License.license_key == "SMP-LIC-2026-A1B2-C3D4").first()
+        if default_inst and default_lic:
+            binding_exists = db.query(LicenseInstallation).filter(
+                LicenseInstallation.license_id == default_lic.id,
+                LicenseInstallation.installation_id == default_inst.id
+            ).first()
+            if not binding_exists:
+                db.add(LicenseInstallation(
+                    license_id=default_lic.id,
+                    installation_id=default_inst.id,
+                    is_active=True,
+                    activated_at=datetime.now(timezone.utc)
+                ))
+                logger.info("Auto-binding initial seed license SMP-LIC-2026-A1B2-C3D4 ke INST-2026-DPD-01.")
+
+            cred_exists = db.query(InstallationCredential).filter(
+                InstallationCredential.installation_id == default_inst.id,
+                InstallationCredential.is_active == True
+            ).first()
+            if not cred_exists:
+                cid = "CID-" + secrets.token_hex(8).upper()
+                csec = secrets.token_urlsafe(32)
+                db.add(InstallationCredential(
+                    installation_id=default_inst.id,
+                    client_id=cid,
+                    client_secret_hash=hash_password(csec),
+                    is_active=True
+                ))
+                logger.info(f"Auto-generated credentials for INST-2026-DPD-01: {cid}")
 
         db.commit()
         logger.info("Inisialisasi database dan seeding data awal berhasil.")

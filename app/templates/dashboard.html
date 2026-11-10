@@ -109,7 +109,8 @@
                             {% endif %}
                         </td>
                         <td>
-                            <button onclick="testValidation('{{ lic.license_key }}', 'INST-2026-DPD-01')" class="btn btn-secondary btn-sm" title="Uji Validasi Berkala">
+                            {% set inst_code = (lic.installations[0].installation.installation_code) if (lic.installations and lic.installations|length > 0 and lic.installations[0].installation) else ((lic.customer.installations[0].installation_code) if (lic.customer and lic.customer.installations and lic.customer.installations|length > 0) else '') %}
+                            <button onclick="testValidation('{{ lic.license_key }}', '{{ inst_code }}')" class="btn btn-secondary btn-sm" title="Uji Validasi Berkala">
                                 🛡️ Uji Validasi
                             </button>
                         </td>

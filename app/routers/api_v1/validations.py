@@ -1,9 +1,11 @@
 """Periodic license validation endpoints called by SIMPATI instances."""
 
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Request, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.models.installation import Installation
+from app.models.license import License, LicenseInstallation
 from app.models.user import LicenseUser
 from app.schemas.license import LicenseValidationRequest
 from app.security.dependencies import require_installation_auth, require_authenticated_user
@@ -54,10 +56,45 @@ def preview_license_validation(
     Hanya untuk keperluan monitoring dan preview dari dashboard, bukan untuk produksi M2M.
     """
     client_ip = request.client.host if request.client else "127.0.0.1"
+
+    inst_code = payload.installation_code
+    license_obj = db.query(License).filter(License.license_key == payload.license_key).first()
+
+    if license_obj:
+        # Cek apakah lisensi sudah terikat ke instalasi
+        active_links = [l for l in license_obj.installations if l.is_active and l.installation]
+        if active_links:
+            # Gunakan kode instalasi yang sudah terikat secara valid
+            bound_codes = [l.installation.installation_code for l in active_links]
+            if not inst_code or inst_code not in bound_codes:
+                inst_code = bound_codes[0]
+        else:
+            # Lisensi belum memiliki ikatan instalasi. Cari instalasi yang relevan untuk diikatkan
+            target_inst = None
+            if inst_code:
+                target_inst = db.query(Installation).filter(Installation.installation_code == inst_code).first()
+            if not target_inst and license_obj.customer_id:
+                target_inst = db.query(Installation).filter(Installation.customer_id == license_obj.customer_id).first()
+            if not target_inst:
+                target_inst = db.query(Installation).first()
+
+            if target_inst:
+                new_bind = LicenseInstallation(
+                    license_id=license_obj.id,
+                    installation_id=target_inst.id,
+                    is_active=True,
+                    activated_at=datetime.now(timezone.utc)
+                )
+                db.add(new_bind)
+                db.commit()
+                inst_code = target_inst.installation_code
+
     result = validate_installation_license(
         db=db,
         license_key=payload.license_key,
-        installation_code=payload.installation_code,
+        installation_code=inst_code,
         request_ip=client_ip
     )
+    if "installation_code" not in result:
+        result["installation_code"] = inst_code
     return result

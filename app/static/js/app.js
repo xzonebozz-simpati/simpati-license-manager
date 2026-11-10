@@ -1094,16 +1094,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('Gagal validasi: ' + (data.detail || 'Terjadi kesalahan pada server.'));
                 return;
             }
-            const statusEmoji = data.validation_status === 'ACTIVE' ? '?' :
-                                data.validation_status === 'GRACE_PERIOD' ? '??' : '?';
+            const statusEmoji = data.validation_status === 'ACTIVE' ? '✅' :
+                                (data.validation_status === 'TRIAL' ? '⏳' :
+                                (data.validation_status === 'GRACE_PERIOD' ? '⚠️' : '❌'));
+            const inst = data.installation_code || (data.payload && data.payload.installation_code) || installationCode;
             alert(
-                ` Hasil Uji Validasi Lisensi\n` +
-                `-----------------------------\n` +
+                `${statusEmoji} Hasil Uji Validasi Lisensi\n` +
+                `─────────────────────────────\n` +
                 `Status        : ${data.validation_status}\n` +
-                `Restricted Mode: ${data.is_restricted_mode ? '?? AKTIF' : '?? NON-AKTIF'}\n` +
-                `Instalasi     : ${installationCode}\n` +
+                `Restricted Mode: ${data.is_restricted_mode ? '🔴 AKTIF' : '🟢 NON-AKTIF'}\n` +
+                `Instalasi     : ${inst}\n` +
                 `Jatuh Tempo   : ${data.next_validation_due ? new Date(data.next_validation_due).toLocaleString('id-ID') : '-'}\n` +
-                `Token         : ${data.validation_token}`
+                `Token         : ${data.validation_token || '-'}`
             );
         } catch (err) {
             alert('Gagal menghubungi endpoint validasi: ' + err.message);
