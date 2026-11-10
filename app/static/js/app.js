@@ -409,6 +409,8 @@ document.addEventListener('DOMContentLoaded', () => {
     window.confirmDeleteCustomer = function(customerId, orgName) {
         pendingDeleteCustomerId = customerId;
         document.getElementById('deleteTargetOrgName').innerText = orgName;
+        const confirmationInput = document.getElementById('deleteCustomerNameConfirmation');
+        if (confirmationInput) confirmationInput.value = '';
         window.openModal('modalDeleteCustomerConfirm');
     };
 
@@ -417,15 +419,24 @@ document.addEventListener('DOMContentLoaded', () => {
         btnExecuteDelete.addEventListener('click', async () => {
             if (!pendingDeleteCustomerId) return;
 
+            const expectedName = document.getElementById('deleteTargetOrgName').innerText.trim();
+            const confirmation = document.getElementById('deleteCustomerNameConfirmation').value.trim();
+            if (confirmation !== expectedName) {
+                alert('Nama organisasi tidak cocok. Penghapusan dibatalkan.');
+                return;
+            }
+
             btnExecuteDelete.disabled = true;
-            btnExecuteDelete.innerText = 'Memeriksa & Menghapus...';
+            btnExecuteDelete.innerText = 'Menghapus seluruh data...';
 
             try {
                 const res = await fetch(`/api/v1/customers/${pendingDeleteCustomerId}`, {
                     method: 'DELETE',
                     headers: {
+                        'Content-Type': 'application/json',
                         'X-CSRF-Token': window.getCsrfToken()
                     },
+                    body: JSON.stringify({ confirmation }),
                     credentials: 'same-origin'
                 });
                 const data = await res.json();
@@ -446,7 +457,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('Kesalahan jaringan: ' + err.message);
             } finally {
                 btnExecuteDelete.disabled = false;
-                btnExecuteDelete.innerText = 'Ya, Hapus Pelanggan';
+                btnExecuteDelete.innerText = 'Hapus Permanen Semua Data';
                 pendingDeleteCustomerId = null;
             }
         });

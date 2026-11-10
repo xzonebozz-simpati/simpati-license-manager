@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 from app.models.customer import Customer
 from app.models.installation import Installation
 from app.models.license import License
+from app.models.security import RevocationRecord
+from app.models.operations import LicenseAuditLog
 from app.schemas.customer import CustomerCreate, CustomerUpdate
 from app.services.audit_service import log_audit_event
 from app.services.license_service import compute_license_status
@@ -137,41 +139,57 @@ def delete_customer(
     customer_id: UUID,
     user_id: Optional[UUID] = None
 ) -> Tuple[bool, str]:
-    """Deletes a customer organization only after strict relational integrity checks."""
+    """Permanently deletes a customer and all customer-owned license/installation data."""
     customer = get_customer_by_id(db, customer_id)
     if not customer:
         return False, "Pelanggan tidak ditemukan."
 
-    licenses_count = db.query(License).filter(License.customer_id == customer_id).count()
-    if licenses_count > 0:
-        return False, (
-            f"Pelanggan '{customer.organization_name}' tidak dapat dihapus karena masih memiliki "
-            f"{licenses_count} lisensi komersial terdaftar. Cabut atau bersihkan lisensi terlebih dahulu, "
-            f"atau ubah status pelanggan menjadi Nonaktif (Suspended)."
-        )
-
-    installations_count = db.query(Installation).filter(Installation.customer_id == customer_id).count()
-    if installations_count > 0:
-        return False, (
-            f"Pelanggan '{customer.organization_name}' tidak dapat dihapus karena masih memiliki "
-            f"{installations_count} server instalasi terhubung. Hapus atau pindahkan instalasi server terlebih dahulu."
-        )
-
     code = customer.customer_code
     name = customer.organization_name
+    # Capture identifiers for generic revocation records (entity_id has no FK).
+    license_rows = db.query(License.id, License.license_key).filter(License.customer_id == customer_id).all()
+    installation_rows = db.query(Installation.id, Installation.installation_code).filter(
+        Installation.customer_id == customer_id
+    ).all()
+    license_ids = [row[0] for row in license_rows]
+    installation_ids = [row[0] for row in installation_rows]
+    related_audit_targets = [f"customer:{code}"]
+    related_audit_targets.extend(f"license:{row[1]}" for row in license_rows)
+    related_audit_targets.extend(f"installation:{row[1]}" for row in installation_rows)
 
-    db.delete(customer)
-    db.commit()
+    try:
+        # These polymorphic records intentionally have no FK, so remove them explicitly.
+        entity_ids = license_ids + installation_ids
+        if entity_ids:
+            db.query(RevocationRecord).filter(RevocationRecord.entity_id.in_(entity_ids)).delete(
+                synchronize_session=False
+            )
+        # Remove resource-specific audit rows; the single deletion event below remains
+        # as the central security/audit record that the purge was performed.
+        db.query(LicenseAuditLog).filter(LicenseAuditLog.target_resource.in_(related_audit_targets)).delete(
+            synchronize_session=False
+        )
 
+        # ORM delete-orphan cascades remove licenses, license histories/validations,
+        # installation credentials/events, and all association/entitlement rows.
+        db.delete(customer)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger_error = str(exc)
+        return False, f"Penghapusan pelanggan gagal dan dibatalkan: {logger_error}"
+
+    # Keep one central audit event that records the administrative deletion itself.
     log_audit_event(
         db=db,
         action_category="CUSTOMER",
-        action_name="CUSTOMER_DELETED",
+        action_name="CUSTOMER_PERMANENTLY_DELETED",
         user_id=user_id,
         target_resource=f"customer:{code}",
-        details={"deleted_organization": name}
+        details={"deleted_organization": name, "deleted_license_count": len(license_ids),
+                 "deleted_installation_count": len(installation_ids)}
     )
-    return True, f"Pelanggan '{name}' ({code}) berhasil dihapus secara aman."
+    return True, f"Pelanggan '{name}' ({code}) beserta seluruh lisensi dan data instalasinya berhasil dihapus permanen."
 
 
 def get_customer_installations(db: Session, customer_id: UUID) -> List[Installation]:
