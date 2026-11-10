@@ -1,5 +1,6 @@
 """License validation, heartbeat, and Restricted Mode enforcement service."""
 
+import base64
 import json
 import secrets
 from datetime import datetime, timezone, timedelta
@@ -230,6 +231,8 @@ def validate_installation_license(
     installation.last_heartbeat_at = now
     db.commit()
 
+    signature_b64 = base64.b64encode(bytes.fromhex(signature_hex)).decode("ascii")
+
     return {
         "validation_token": validation_token,
         "validation_status": status,
@@ -242,5 +245,7 @@ def validate_installation_license(
         "capacity": capacity_data,
         "restricted_rules": restricted_rules,
         "payload": validation_payload,
-        "signature": signature_hex
+        "signature": signature_hex,
+        "signature_format": "hex",
+        "signature_base64": signature_b64
     }

@@ -123,10 +123,29 @@ class LicenseClient:
         return self.config.public_key_pem
 
     # ------------------------------------------------------------------------
-    # Verifikasi Tanda Tangan Ed25519 (Point 4)
+    # Verifikasi Tanda Tangan Ed25519 (Point 4 & Penyesuaian HEX / Base64)
     # ------------------------------------------------------------------------
-    def verify_signature(self, payload: Dict[str, Any], signature_hex: str) -> bool:
-        """Memverifikasi signature Ed25519 terhadap payload kanonikal anti-tamper.
+    @staticmethod
+    def decode_signature_bytes(signature_str: str) -> bytes:
+        """Mendukung format tanda tangan Ed25519 baik HEX (128 karakter) maupun Base64."""
+        sig = signature_str.strip()
+        # Jika panjang 128 karakter hex (0-9, a-f, A-F)
+        if len(sig) == 128 and all(c in "0123456789abcdefABCDEF" for c in sig):
+            try:
+                return bytes.fromhex(sig)
+            except ValueError:
+                pass
+        # Jika format Base64
+        try:
+            raw = base64.b64decode(sig)
+            if len(raw) == 64:
+                return raw
+        except Exception:
+            pass
+        return bytes.fromhex(sig)
+
+    def verify_signature(self, payload: Dict[str, Any], signature_str: str) -> bool:
+        """Memverifikasi signature Ed25519 (format HEX atau Base64) terhadap payload kanonikal anti-tamper.
 
         Raises:
             InvalidSignature: jika tanda tangan digital tidak cocok atau data dimanipulasi.
@@ -137,7 +156,7 @@ class LicenseClient:
 
         pub_key = serialization.load_pem_public_key(self.config.public_key_pem.encode("utf-8"))
         canonical_bytes = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        signature_bytes = bytes.fromhex(signature_hex)
+        signature_bytes = self.decode_signature_bytes(signature_str)
 
         pub_key.verify(signature_bytes, canonical_bytes)
         return True
@@ -205,6 +224,8 @@ class LicenseClient:
             "license_key": self.config.license_key,
             "installation_code": self.config.installation_code,
             "is_restricted_mode": bool(resp_data.get("is_restricted_mode", False)),
+            "is_offline": False,
+            "grace_type": "CONTRACT_GRACE" if resp_data.get("validation_status") == "GRACE_PERIOD" else "NONE",
             "allowed_modules": resp_data.get("allowed_modules", []),
             "allowed_levels": resp_data.get("allowed_levels", []),
             "capacity": resp_data.get("capacity", {}),
@@ -302,6 +323,8 @@ class LicenseClient:
                     )
                     cached["validation_status"] = "GRACE_PERIOD"
                     cached["is_restricted_mode"] = False
+                    cached["is_offline"] = True
+                    cached["grace_type"] = "OFFLINE_GRACE"
                     with self._lock:
                         self._cached_state = cached
                     return cached
@@ -313,6 +336,8 @@ class LicenseClient:
         restricted_state = {
             "validation_status": "RESTRICTED",
             "is_restricted_mode": True,
+            "is_offline": True,
+            "grace_type": "EXPIRED_OFFLINE_GRACE",
             "allowed_modules": [],
             "allowed_levels": [],
             "capacity": {},
