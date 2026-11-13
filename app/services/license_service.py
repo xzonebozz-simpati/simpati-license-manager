@@ -117,7 +117,9 @@ def get_root_public_key() -> str:
 
 def compute_license_status(license_obj: License) -> str:
     """Determines real-time operational status based on dates, grace period, and overrides."""
-    if license_obj.status in ["REVOKED", "SUSPENDED", "DRAFT"]:
+    # Status override administratif selalu menang. TERMINATED/EXPIRED sebelumnya tidak
+    # ditangani sehingga lisensi yang sudah dihentikan bisa terhitung ACTIVE menurut tanggal.
+    if license_obj.status in ["REVOKED", "SUSPENDED", "DRAFT", "TERMINATED", "EXPIRED"]:
         return license_obj.status
 
     now = datetime.now(timezone.utc)
@@ -127,12 +129,16 @@ def compute_license_status(license_obj: License) -> str:
     if valid_from and now < valid_from:
         return "PENDING_ACTIVATION"
 
-    if valid_until and now <= valid_until:
+    # Tanpa tanggal berakhir yang sah, jangan pernah dianggap aktif.
+    if not valid_until:
+        return "RESTRICTED"
+
+    if now <= valid_until:
         return "ACTIVE"
 
     # Expired, check grace period
-    grace_cutoff = (valid_until + timedelta(days=license_obj.grace_period_days)) if valid_until else now
-    if now <= grace_cutoff:
+    grace_days = max(0, int(license_obj.grace_period_days or 0))
+    if now <= valid_until + timedelta(days=grace_days):
         return "GRACE_PERIOD"
 
     # Beyond grace period

@@ -6,6 +6,11 @@ Menghubungkan aplikasi SIMPATI 555 ke SIMPATI LICENSE MANAGER:
 3. Verifikasi tanda tangan digital Ed25519 anti-tamper.
 4. Penyimpanan status lisensi lokal, offline grace period, dan penegakan Restricted Mode.
 """
+# CATATAN KEAMANAN: berkas ini hanya REFERENSI/contoh integrasi. Klien yang dipakai produksi
+# adalah pendaftaran555/license_client.py, yang sudah diperkeras (verifikasi tanda tangan efektif,
+# nonce anti-replay, cache ber-HMAC, fail-closed). Jangan memakai berkas ini apa adanya untuk
+# menegakkan lisensi: field status level-atas dan cache lokalnya tidak dilindungi.
+
 
 from __future__ import annotations
 
