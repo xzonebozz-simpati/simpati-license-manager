@@ -11,21 +11,59 @@ from app.models.user import LicenseUser
 from app.schemas.license import (
     LicenseCreate,
     LicenseExtend,
+    LicenseValidityUpdate,
     LicenseStatusUpdate,
     LicenseDetailResponse,
+    LicenseActivationRequest,
+    LicenseActivationResponse,
 )
 from app.services.license_service import (
     issue_license,
     compute_license_status,
     extend_license,
+    update_license_validity,
     update_license_status,
     get_license_detail,
     bind_installation_to_license,
     get_root_public_key,
 )
+from app.services.validation_service import activate_client_license
 from app.security.dependencies import require_authenticated_user
+from fastapi import Request
 
 router = APIRouter(prefix="/api/v1/licenses", tags=["Licenses"])
+
+
+@router.post("/activate", summary="Activate License Client-side", response_model=LicenseActivationResponse)
+def activate_license_alias_endpoint(
+    payload: LicenseActivationRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Alias endpoint aktivasi lisensi dari sisi klien SIMPATI 555."""
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    base_url = str(request.base_url).rstrip("/")
+    try:
+        res = activate_client_license(
+            db=db,
+            license_key=payload.license_key,
+            server_domain=payload.server_domain,
+            server_ip=payload.server_ip or client_ip,
+            instance_name=payload.instance_name,
+            environment=payload.environment,
+        )
+        res["server_url"] = base_url
+        return res
+    except ValueError as ve:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(ve),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Terjadi kesalahan saat mengaktifkan lisensi: {str(e)}",
+        )
 
 
 @router.get("", summary="List Commercial Licenses")
@@ -137,6 +175,34 @@ def extend_license_endpoint(
         "license_id": str(lic.id),
         "license_key": lic.license_key,
         "valid_until": lic.valid_until,
+        "status": lic.status,
+        "signature": lic.signature
+    }
+
+
+@router.patch("/{license_id}/validity", summary="Edit/Correct License Validity Period")
+def update_validity_endpoint(
+    license_id: UUID,
+    payload: LicenseValidityUpdate,
+    db: Session = Depends(get_db),
+    current_user: LicenseUser = Depends(require_authenticated_user)
+):
+    """Mengoreksi periode masa berlaku lisensi (maju/mundur) dan menandatangani ulang snapshot."""
+    try:
+        lic = update_license_validity(db=db, license_id=license_id, data=payload, user_id=current_user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    return {
+        "message": (
+            f"Masa berlaku lisensi '{lic.license_key}' berhasil diubah menjadi "
+            f"{lic.valid_from.strftime('%d-%m-%Y')} s.d. {lic.valid_until.strftime('%d-%m-%Y')}."
+        ),
+        "license_id": str(lic.id),
+        "license_key": lic.license_key,
+        "valid_from": lic.valid_from,
+        "valid_until": lic.valid_until,
+        "grace_period_days": lic.grace_period_days,
         "status": lic.status,
         "signature": lic.signature
     }

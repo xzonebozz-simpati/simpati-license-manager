@@ -34,12 +34,15 @@ from app.schemas.package import (
 from app.schemas.license import (
     LicenseCreate,
     LicenseExtend,
+    LicenseValidityUpdate,
     LicenseStatusUpdate,
     LicenseCapacityInput,
     LicenseHistoryResponse,
     LicenseDetailResponse,
     LicenseValidationRequest,
     LicenseValidationResponse,
+    LicenseActivationRequest,
+    LicenseActivationResponse,
 )
 
 __all__ = [
@@ -73,10 +76,13 @@ __all__ = [
     "PackageDetailResponse",
     "LicenseCreate",
     "LicenseExtend",
+    "LicenseValidityUpdate",
     "LicenseStatusUpdate",
     "LicenseCapacityInput",
     "LicenseHistoryResponse",
     "LicenseDetailResponse",
     "LicenseValidationRequest",
     "LicenseValidationResponse",
+    "LicenseActivationRequest",
+    "LicenseActivationResponse",
 ]

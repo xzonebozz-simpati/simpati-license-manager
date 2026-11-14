@@ -17,6 +17,15 @@ from app.security.crypto import generate_secure_token
 from app.services.audit_service import log_audit_event
 
 
+class LicenseAlreadyActivatedError(ValueError):
+    """Lisensi sudah terikat ke sebuah instalasi; aktivasi ulang tanpa autentikasi ditolak."""
+
+
+# Hanya status ini yang boleh beroperasi penuh. Status lain (RESTRICTED, SUSPENDED, EXPIRED,
+# REVOKED, TERMINATED, DRAFT, PENDING_ACTIVATION, ...) masuk Restricted Mode.
+OPERATIONAL_STATUSES = ("ACTIVE", "GRACE_PERIOD")
+
+
 def _sign_payload_canonical(payload_dict: Dict[str, Any]) -> str:
     """Signs canonical JSON bytes of payload_dict using root Ed25519 private key."""
     priv_pem, _ = get_or_load_root_signing_keys()
@@ -30,7 +39,8 @@ def validate_installation_license(
     db: Session,
     license_key: str,
     installation_code: str,
-    request_ip: str = "127.0.0.1"
+    request_ip: str = "127.0.0.1",
+    nonce: str | None = None,
 ) -> Dict[str, Any]:
     """Validates an installation against its commercial license, applying binding checks,
 
@@ -63,6 +73,8 @@ def validate_installation_license(
                 "public_registration_blocked": True
             }
         }
+        if nonce:
+            rej_payload["nonce"] = nonce
         sig = _sign_payload_canonical(rej_payload)
         return {
             "validation_token": validation_token,
@@ -102,6 +114,8 @@ def validate_installation_license(
                 "public_registration_blocked": True
             }
         }
+        if nonce:
+            rej_payload["nonce"] = nonce
         sig = _sign_payload_canonical(rej_payload)
         return {
             "validation_token": validation_token,
@@ -149,6 +163,8 @@ def validate_installation_license(
                 "public_registration_blocked": True
             }
         }
+        if nonce:
+            rej_payload["nonce"] = nonce
         sig = _sign_payload_canonical(rej_payload)
         return {
             "validation_token": validation_token,
@@ -166,7 +182,9 @@ def validate_installation_license(
 
     # 4. Compute Status & Restricted Mode
     status = compute_license_status(license_obj)
-    is_restricted = status in ["RESTRICTED", "SUSPENDED", "EXPIRED", "REVOKED"]
+    # Daftar-putih: selain ACTIVE/GRACE_PERIOD selalu terbatas (sebelumnya DRAFT,
+    # PENDING_ACTIVATION, dan TERMINATED lolos sebagai tidak terbatas).
+    is_restricted = status not in OPERATIONAL_STATUSES
 
     # Calculate next validation due (typically 24 hours)
     next_due = now + timedelta(hours=24)
@@ -212,6 +230,7 @@ def validate_installation_license(
         "installation_code": installation_code,
         "valid_from": v_from,
         "valid_until": v_until,
+        "grace_period_days": int(license_obj.grace_period_days or 0),
         "validation_status": status,
         "is_restricted_mode": is_restricted,
         "validated_at": now.isoformat(),
@@ -221,6 +240,9 @@ def validate_installation_license(
         "capacity": capacity_data,
         "restricted_rules": restricted_rules
     }
+
+    if nonce:
+        validation_payload["nonce"] = nonce
 
     # 6. Ed25519 Signature Generation
     signature_hex = _sign_payload_canonical(validation_payload)
@@ -255,6 +277,7 @@ def validate_installation_license(
         "installation_code": installation_code,
         "valid_from": v_from,
         "valid_until": v_until,
+        "grace_period_days": int(license_obj.grace_period_days or 0),
         "next_validation_due": next_due.isoformat(),
         "is_restricted_mode": is_restricted,
         "allowed_modules": allowed_modules,
@@ -265,4 +288,143 @@ def validate_installation_license(
         "signature": signature_hex,
         "signature_format": "hex",
         "signature_base64": signature_b64
+    }
+
+
+def activate_client_license(
+    db: Session,
+    license_key: str,
+    server_domain: str | None = None,
+    server_ip: str | None = None,
+    instance_name: str | None = None,
+    environment: str = "PRODUCTION",
+) -> Dict[str, Any]:
+    """Mengaktifkan lisensi dari sisi klien SIMPATI 555 menggunakan License Key.
+
+    Otomatis:
+    1. Memverifikasi validitas License Key, pelanggan, status, dan masa berlaku.
+    2. Menghubungkan atau membuat identitas instalasi secara otomatis.
+    3. Menerbitkan/merotasi kredensial M2M (client_id & client_secret) yang aman.
+    4. Mengaktifkan lisensi jika sebelumnya berstatus DRAFT.
+    5. Menjalankan validasi awal lengkap dengan snapshot dan tanda tangan digital Ed25519.
+    """
+    from app.models.customer import Customer
+    from app.models.installation import Installation, InstallationCredential
+    from app.services.installation_service import (
+        generate_installation_code,
+        generate_client_credentials,
+        rotate_installation_credentials,
+    )
+    from app.services.license_service import ensure_utc
+
+    key_clean = (license_key or "").strip()
+    if not key_clean:
+        raise ValueError("License Key tidak boleh kosong.")
+
+    # 1. Cari Lisensi
+    lic = db.query(License).filter(License.license_key == key_clean).first()
+    if not lic:
+        raise ValueError(
+            f"License Key '{key_clean}' tidak ditemukan dalam sistem pusat. "
+            "Pastikan License Key yang dimasukkan benar dan telah diterbitkan oleh administrator."
+        )
+
+    # 2. Periksa Organisasi Pelanggan
+    customer = db.query(Customer).filter(Customer.id == lic.customer_id).first()
+    if not customer or customer.status != "ACTIVE":
+        raise ValueError("Organisasi pelanggan pemilik lisensi ini sedang dinonaktifkan.")
+
+    # 3. Periksa Status Lisensi & Masa Berlaku
+    now = datetime.now(timezone.utc)
+    if lic.status in ["REVOKED", "TERMINATED"]:
+        raise ValueError(f"Lisensi ini berstatus '{lic.status}' dan telah dicabut. Tidak dapat diaktifkan.")
+    if lic.status == "SUSPENDED":
+        raise ValueError("Lisensi ini sedang ditangguhkan (SUSPENDED). Hubungi administrator SIMPATI.")
+
+    v_until = ensure_utc(lic.valid_until)
+    if v_until and v_until < now:
+        raise ValueError("Masa berlaku lisensi ini telah kedaluwarsa.")
+
+    # 4. Hubungkan atau Buat Instalasi
+    existing_link = (
+        db.query(LicenseInstallation)
+        .filter(LicenseInstallation.license_id == lic.id, LicenseInstallation.is_active == True)
+        .first()
+    )
+
+    if existing_link:
+        # Dulu: kredensial instalasi diputar & client_secret baru dikembalikan kepada SIAPA PUN
+        # yang mengetahui License Key (endpoint ini tanpa autentikasi) => instalasi sah terkunci
+        # dan lisensi bisa diambil alih. Sekarang ditolak; pemasangan ulang harus lewat
+        # administrator License Manager (Rotate Credentials, terautentikasi).
+        raise LicenseAlreadyActivatedError(
+            "Lisensi ini sudah diaktifkan pada sebuah instalasi. Untuk memasang ulang atau "
+            "memulihkan kredensial, minta administrator SIMPATI License Manager melakukan "
+            "'Rotate Credentials' pada instalasi tersebut."
+        )
+    else:
+        active_count = (
+            db.query(LicenseInstallation)
+            .filter(LicenseInstallation.license_id == lic.id, LicenseInstallation.is_active == True)
+            .count()
+        )
+        if active_count >= lic.max_installations:
+            raise ValueError(
+                f"Batas maksimum instalasi ({lic.max_installations}) untuk lisensi ini sudah terpenuhi."
+            )
+
+        inst_code = generate_installation_code(customer.customer_code)
+        inst_title = instance_name or f"Instalasi SIMPATI {customer.organization_name}"
+        inst = Installation(
+            customer_id=customer.id,
+            installation_code=inst_code,
+            name=inst_title,
+            server_domain=server_domain,
+            server_ip=server_ip,
+            environment=environment,
+            status="ACTIVE",
+        )
+        db.add(inst)
+        db.flush()
+
+        client_id, client_secret, secret_hash = generate_client_credentials()
+        cred = InstallationCredential(
+            installation_id=inst.id,
+            client_id=client_id,
+            client_secret_hash=secret_hash,
+            is_active=True,
+        )
+        db.add(cred)
+
+        new_link = LicenseInstallation(
+            license_id=lic.id,
+            installation_id=inst.id,
+            is_active=True,
+        )
+        db.add(new_link)
+
+    # Aktifkan lisensi jika statusnya masih DRAFT
+    if lic.status == "DRAFT":
+        lic.status = "ACTIVE"
+
+    db.commit()
+    db.refresh(inst)
+    db.refresh(lic)
+
+    # 5. Lakukan validasi awal untuk snapshot lisensi terverifikasi
+    val_res = validate_installation_license(
+        db=db,
+        license_key=lic.license_key,
+        installation_code=inst.installation_code,
+        request_ip=server_ip or "127.0.0.1",
+    )
+
+    return {
+        "success": True,
+        "message": "Lisensi SIMPATI 555 berhasil diaktifkan.",
+        "license_key": lic.license_key,
+        "installation_code": inst.installation_code,
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "validation_result": val_res,
     }
