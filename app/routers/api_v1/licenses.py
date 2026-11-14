@@ -11,6 +11,7 @@ from app.models.user import LicenseUser
 from app.schemas.license import (
     LicenseCreate,
     LicenseExtend,
+    LicenseValidityUpdate,
     LicenseStatusUpdate,
     LicenseDetailResponse,
     LicenseActivationRequest,
@@ -20,6 +21,7 @@ from app.services.license_service import (
     issue_license,
     compute_license_status,
     extend_license,
+    update_license_validity,
     update_license_status,
     get_license_detail,
     bind_installation_to_license,
@@ -173,6 +175,34 @@ def extend_license_endpoint(
         "license_id": str(lic.id),
         "license_key": lic.license_key,
         "valid_until": lic.valid_until,
+        "status": lic.status,
+        "signature": lic.signature
+    }
+
+
+@router.patch("/{license_id}/validity", summary="Edit/Correct License Validity Period")
+def update_validity_endpoint(
+    license_id: UUID,
+    payload: LicenseValidityUpdate,
+    db: Session = Depends(get_db),
+    current_user: LicenseUser = Depends(require_authenticated_user)
+):
+    """Mengoreksi periode masa berlaku lisensi (maju/mundur) dan menandatangani ulang snapshot."""
+    try:
+        lic = update_license_validity(db=db, license_id=license_id, data=payload, user_id=current_user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    return {
+        "message": (
+            f"Masa berlaku lisensi '{lic.license_key}' berhasil diubah menjadi "
+            f"{lic.valid_from.strftime('%d-%m-%Y')} s.d. {lic.valid_until.strftime('%d-%m-%Y')}."
+        ),
+        "license_id": str(lic.id),
+        "license_key": lic.license_key,
+        "valid_from": lic.valid_from,
+        "valid_until": lic.valid_until,
+        "grace_period_days": lic.grace_period_days,
         "status": lic.status,
         "signature": lic.signature
     }

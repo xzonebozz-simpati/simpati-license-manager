@@ -16,7 +16,7 @@ from app.models.catalog import LicensePackage
 from app.models.customer import Customer
 from app.models.installation import Installation
 from app.models.security import RevocationRecord
-from app.schemas.license import LicenseCreate, LicenseExtend, LicenseStatusUpdate
+from app.schemas.license import LicenseCreate, LicenseExtend, LicenseStatusUpdate, LicenseValidityUpdate
 from app.services.audit_service import log_audit_event
 from app.security.crypto import sign_payload, verify_signature, generate_ed25519_keypair
 
@@ -372,6 +372,122 @@ def extend_license(
             "old_until": old_until.isoformat(),
             "new_until": new_until.isoformat(),
             "reason": data.reason
+        }
+    )
+    return license_obj
+
+
+# ---------------------------------------------------------------------------
+# License Validity Correction (Edit jangka waktu / koreksi salah input)
+# ---------------------------------------------------------------------------
+
+def update_license_validity(
+    db: Session,
+    license_id: UUID,
+    data: LicenseValidityUpdate,
+    user_id: Optional[UUID] = None
+) -> License:
+    """
+    Mengoreksi periode masa berlaku (valid_from, valid_until, opsional grace period)
+    pada lisensi yang sudah diterbitkan. Berbeda dengan extend_license(), tanggal baru
+    boleh lebih awal maupun lebih akhir dari tanggal lama. Snapshot ditandatangani ulang.
+    """
+    license_obj = db.query(License).filter(License.id == license_id).first()
+    if not license_obj:
+        raise ValueError("Lisensi tidak ditemukan.")
+
+    if license_obj.status in ("REVOKED", "TERMINATED"):
+        raise ValueError(
+            f"Lisensi berstatus {license_obj.status} dan tidak dapat diubah masa berlakunya."
+        )
+
+    old_from = ensure_utc(license_obj.valid_from)
+    old_until = ensure_utc(license_obj.valid_until)
+    old_grace = license_obj.grace_period_days
+    new_from = ensure_utc(data.valid_from)
+    new_until = ensure_utc(data.valid_until)
+    new_grace = data.grace_period_days if data.grace_period_days is not None else old_grace
+
+    if new_until <= new_from:
+        raise ValueError("Tanggal kedaluwarsa harus setelah tanggal mulai berlaku.")
+
+    if new_from == old_from and new_until == old_until and new_grace == old_grace:
+        raise ValueError("Tidak ada perubahan: periode yang dimasukkan sama dengan periode saat ini.")
+
+    license_obj.valid_from = new_from
+    license_obj.valid_until = new_until
+    license_obj.grace_period_days = new_grace
+
+    # Status EXPIRED/RESTRICTED/PENDING_ACTIVATION diturunkan dari tanggal lama. Jika periode
+    # baru membuat lisensi kembali berlaku (atau belum mulai), pulihkan ke ACTIVE agar
+    # compute_license_status() menghitung ulang dari tanggal. SUSPENDED/REVOKED tetap
+    # keputusan administratif dan tidak disentuh di sini.
+    now = datetime.now(timezone.utc)
+    if license_obj.status in ("EXPIRED", "RESTRICTED", "PENDING_ACTIVATION", "DRAFT"):
+        if now <= new_until + timedelta(days=max(0, int(new_grace or 0))):
+            license_obj.status = "ACTIVE"
+    elif license_obj.status == "ACTIVE" and now > new_until + timedelta(days=max(0, int(new_grace or 0))):
+        # Periode dipersingkat sampai sudah lewat: biarkan ACTIVE, status real-time
+        # (computed_status) otomatis menjadi RESTRICTED.
+        pass
+
+    # Update snapshot & tanda tangan ulang
+    snapshot_data: Dict[str, Any] = {}
+    if license_obj.snapshot_entitlements:
+        try:
+            snapshot_data = json.loads(license_obj.snapshot_entitlements)
+        except Exception:
+            pass
+
+    snapshot_data["valid_from"] = new_from.isoformat()
+    snapshot_data["valid_until"] = new_until.isoformat()
+    snapshot_data["grace_period_days"] = new_grace
+    snapshot_data["last_validity_edit_at"] = now.isoformat()
+    snapshot_data["validity_edit_reason"] = data.reason
+
+    canonical_json = json.dumps(snapshot_data, sort_keys=True, separators=(',', ':'))
+    priv_pem, _ = get_or_load_root_signing_keys()
+    license_obj.snapshot_entitlements = canonical_json
+    license_obj.signature = sign_payload(priv_pem, canonical_json.encode("utf-8"))
+
+    fmt = lambda d: d.strftime('%d-%m-%Y')
+    history = LicenseHistory(
+        license_id=license_obj.id,
+        action="VALIDITY_EDITED",
+        old_values=json.dumps({
+            "valid_from": old_from.isoformat(),
+            "valid_until": old_until.isoformat(),
+            "grace_period_days": old_grace,
+        }, sort_keys=True),
+        new_values=json.dumps({
+            "valid_from": new_from.isoformat(),
+            "valid_until": new_until.isoformat(),
+            "grace_period_days": new_grace,
+        }, sort_keys=True),
+        performed_by_user_id=user_id,
+        remarks=(
+            f"Koreksi masa berlaku: {fmt(old_from)} s.d. {fmt(old_until)} -> "
+            f"{fmt(new_from)} s.d. {fmt(new_until)}. Alasan: {data.reason}."
+        )
+    )
+    db.add(history)
+    db.commit()
+    db.refresh(license_obj)
+
+    log_audit_event(
+        db=db,
+        action_category="LICENSE",
+        action_name="LICENSE_VALIDITY_EDITED",
+        user_id=user_id,
+        target_resource=f"license:{license_obj.license_key}",
+        details={
+            "old_from": old_from.isoformat(),
+            "old_until": old_until.isoformat(),
+            "new_from": new_from.isoformat(),
+            "new_until": new_until.isoformat(),
+            "old_grace": old_grace,
+            "new_grace": new_grace,
+            "reason": data.reason,
         }
     )
     return license_obj
