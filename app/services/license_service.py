@@ -318,7 +318,14 @@ def extend_license(
 
     # Update expiration
     license_obj.valid_until = new_until
-    if license_obj.status == "SUSPENDED" and "perpanjang" in (data.reason or "").lower():
+    # Perpanjangan harus memulihkan status yang diturunkan karena masa berlaku habis.
+    # compute_license_status() memprioritaskan status administratif (EXPIRED/RESTRICTED/
+    # PENDING_ACTIVATION), sehingga tanpa reset ini lisensi yang sudah diperpanjang tetap
+    # dianggap tidak aktif oleh CORE. SUSPENDED/REVOKED/TERMINATED adalah keputusan
+    # administratif dan hanya dipulihkan lewat perubahan status eksplisit.
+    if license_obj.status in ("EXPIRED", "RESTRICTED", "PENDING_ACTIVATION"):
+        license_obj.status = "ACTIVE"
+    elif license_obj.status == "SUSPENDED" and "perpanjang" in (data.reason or "").lower():
         license_obj.status = "ACTIVE"
 
     # Update snapshot

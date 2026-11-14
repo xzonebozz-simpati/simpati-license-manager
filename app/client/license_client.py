@@ -35,6 +35,21 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, HTMLResponse
 
+
+class _MethodPreservingRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Pertahankan metode POST saat redirect (urllib bawaan mengubahnya menjadi GET -> 405)."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if code not in (301, 302, 303, 307, 308):
+            return None
+        hdrs = {k: v for k, v in req.header_items() if k.lower() not in ("host", "content-length")}
+        return urllib.request.Request(newurl.replace(" ", "%20"), data=req.data, headers=hdrs,
+                                      origin_req_host=req.origin_req_host, unverifiable=True,
+                                      method=req.get_method())
+
+
+_OPENER = urllib.request.build_opener(_MethodPreservingRedirectHandler())
+
 logger = logging.getLogger("simpati.license_client")
 
 
@@ -116,7 +131,7 @@ class LicenseClient:
         url = f"{self.config.license_manager_url}/api/v1/licenses/root-public-key"
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
         try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with _OPENER.open(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 pub_pem = data.get("public_key_pem")
                 if pub_pem:
@@ -191,7 +206,7 @@ class LicenseClient:
         )
 
         try:
-            with urllib.request.urlopen(req, timeout=15) as resp:
+            with _OPENER.open(req, timeout=15) as resp:
                 resp_data = json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as http_err:
             try:
@@ -282,7 +297,7 @@ class LicenseClient:
         )
 
         try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with _OPENER.open(req, timeout=10) as resp:
                 if resp.status == 200:
                     logger.debug("Heartbeat telemetri berhasil terkirim.")
                     return True
