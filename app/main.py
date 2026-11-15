@@ -8,7 +8,6 @@ from fastapi import FastAPI, Request, status
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, JSONResponse
-from sqlalchemy import inspect, text
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.config import get_settings
@@ -46,41 +45,11 @@ async def lifespan(app: FastAPI):
     """Application lifespan event handler for startup and graceful shutdown."""
     logger.info("Memulai SIMPATI License Manager...")
     try:
-        # Create missing tables first. SQLAlchemy create_all() does not add
-        # newly introduced columns to tables that already exist.
         Base.metadata.create_all(bind=engine)
-
-        inspector = inspect(engine)
-        if inspector.has_table("package_modules"):
-            columns = {column["name"] for column in inspector.get_columns("package_modules")}
-            if "is_mandatory" not in columns:
-                logger.warning(
-                    "Kolom package_modules.is_mandatory belum ada; menjalankan kompatibilitas skema."
-                )
-                with engine.begin() as connection:
-                    connection.execute(text(
-                        "ALTER TABLE package_modules "
-                        "ADD COLUMN is_mandatory BOOLEAN NOT NULL DEFAULT TRUE"
-                    ))
-                logger.info("Kolom package_modules.is_mandatory berhasil ditambahkan.")
-
-        # Verify the column before any ORM query/seeding uses it.
-        verified_columns = {
-            column["name"] for column in inspect(engine).get_columns("package_modules")
-        }
-        if "is_mandatory" not in verified_columns:
-            raise RuntimeError(
-                "Skema database belum kompatibel: package_modules.is_mandatory tidak tersedia."
-            )
-
         logger.info("Skema database terverifikasi.")
         seed_initial_data()
-        logger.info("Inisialisasi database dan seeding data awal berhasil.")
-    except Exception:
-        logger.exception(
-            "Inisialisasi database gagal. Startup tetap berjalan, tetapi fitur database "
-            "mungkin tidak tersedia sampai masalah skema/koneksi diperbaiki."
-        )
+    except Exception as exc:
+        logger.warning(f"Koneksi DB saat startup: {exc}")
 
     yield
 
