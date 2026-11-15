@@ -90,7 +90,7 @@ class InstallationResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    customer_id: UUID
+    customer_id: Optional[UUID] = None
     installation_code: str
     name: str
     server_domain: Optional[str] = None
@@ -128,7 +128,7 @@ class InstallationDetailResponse(BaseModel):
     id: UUID
     installation_code: str
     name: str
-    customer_id: UUID
+    customer_id: Optional[UUID] = None
     customer_name: Optional[str] = None
     customer_code: Optional[str] = None
     server_domain: Optional[str] = None
