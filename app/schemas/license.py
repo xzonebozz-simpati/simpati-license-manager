@@ -37,6 +37,14 @@ class LicenseExtend(BaseModel):
     reason: Optional[str] = Field(None, min_length=3, description="Reason for extension/renewal")
 
 
+class LicenseValidityUpdate(BaseModel):
+    """Payload untuk mengoreksi periode masa berlaku lisensi (bisa dimajukan/dimundurkan)."""
+    valid_from: datetime
+    valid_until: datetime
+    grace_period_days: Optional[int] = Field(None, ge=0, le=90, description="Opsional: ubah masa tenggang (hari)")
+    reason: str = Field(..., min_length=3, description="Alasan koreksi (wajib untuk audit)")
+
+
 class LicenseStatusUpdate(BaseModel):
     """Payload to suspend, reactivate, or revoke a license."""
     status: str = Field(..., pattern="^(ACTIVE|SUSPENDED|REVOKED)$")
