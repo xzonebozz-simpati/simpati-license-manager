@@ -72,13 +72,20 @@ def list_licenses_endpoint(
     customer_id: Optional[UUID] = None,
     package_id: Optional[UUID] = None,
     status_filter: Optional[str] = None,
+    only_deleted: bool = False,
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
     _: LicenseUser = Depends(require_authenticated_user)
 ):
-    """Retrieves list of issued licenses with live operational status."""
-    query = db.query(License).filter(License.deleted_at.is_(None))
+    """Retrieves list of issued licenses with live operational status.
+
+    only_deleted=true menampilkan isi Recycle Bin (lisensi yang dihapus sementara).
+    """
+    if only_deleted:
+        query = db.query(License).filter(License.deleted_at.is_not(None))
+    else:
+        query = db.query(License).filter(License.deleted_at.is_(None))
     if customer_id:
         query = query.filter(License.customer_id == customer_id)
     if package_id:
@@ -86,7 +93,8 @@ def list_licenses_endpoint(
     if status_filter:
         query = query.filter(License.status == status_filter)
 
-    licenses = query.order_by(License.created_at.desc()).offset(skip).limit(limit).all()
+    order_column = License.deleted_at.desc() if only_deleted else License.created_at.desc()
+    licenses = query.order_by(order_column).offset(skip).limit(limit).all()
     results = []
     for lic in licenses:
         linked_inst_codes = [link.installation.installation_code for link in lic.installations if link.installation]
@@ -106,7 +114,8 @@ def list_licenses_endpoint(
             "installations_count": len(linked_inst_codes),
             "linked_installations": linked_inst_codes,
             "has_signature": bool(lic.signature),
-            "created_at": lic.created_at
+            "created_at": lic.created_at,
+            "deleted_at": lic.deleted_at
         })
     return results
 

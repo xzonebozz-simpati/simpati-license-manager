@@ -41,6 +41,25 @@ settings = get_settings()
 BASE_DIR = Path(__file__).resolve().parent
 
 
+def _log_missing_model_columns() -> None:
+    """Catat kolom di model ORM yang belum ada di tabel database yang sudah berjalan."""
+    try:
+        live = inspect(engine)
+        for table in Base.metadata.sorted_tables:
+            if not live.has_table(table.name):
+                continue
+            existing = {column["name"] for column in live.get_columns(table.name)}
+            missing = [column.name for column in table.columns if column.name not in existing]
+            if missing:
+                logger.error(
+                    "Skema tidak sinkron: tabel %s belum memiliki kolom %s. "
+                    "Jalankan migrasi Alembic atau tambahkan kolom secara manual.",
+                    table.name, ", ".join(missing),
+                )
+    except Exception:
+        logger.exception("Pemeriksaan sinkronisasi skema gagal (diabaikan).")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan event handler for startup and graceful shutdown."""
@@ -85,6 +104,32 @@ async def lifespan(app: FastAPI):
                     "Kolom installations.customer_id berhasil ditambahkan; "
                     "data instalasi lama dibiarkan tanpa relasi pelanggan."
                 )
+
+        # Compatibility for databases created before licenses.deleted_at (Recycle Bin)
+        # was introduced. Tanpa kolom ini SEMUA query ORM ke tabel licenses gagal
+        # (daftar lisensi, detail, seed) dan Developer Console tidak menampilkan data apa pun.
+        if inspect(engine).has_table("licenses"):
+            license_columns = {
+                column["name"] for column in inspect(engine).get_columns("licenses")
+            }
+            if "deleted_at" not in license_columns:
+                logger.warning(
+                    "Kolom licenses.deleted_at belum ada; menambahkan kolom nullable "
+                    "(data lisensi lama tidak diubah)."
+                )
+                timestamp_type = "TIMESTAMPTZ" if engine.dialect.name == "postgresql" else "DATETIME"
+                with engine.begin() as connection:
+                    connection.execute(text(
+                        f"ALTER TABLE licenses ADD COLUMN deleted_at {timestamp_type} NULL"
+                    ))
+                logger.info("Kolom licenses.deleted_at berhasil ditambahkan.")
+            with engine.begin() as connection:
+                connection.execute(text(
+                    "CREATE INDEX IF NOT EXISTS ix_licenses_deleted_at ON licenses (deleted_at)"
+                ))
+
+        # Diagnostik: laporkan (tanpa mengubah apa pun) kolom model lain yang belum ada di database.
+        _log_missing_model_columns()
 
         # Verify required compatibility columns before ORM queries/seeding.
         verified_columns = {
