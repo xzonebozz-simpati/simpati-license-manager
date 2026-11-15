@@ -80,9 +80,14 @@ def test_activation_valid_license(client, db_session):
     assert "CORE" in val["allowed_modules"]
     assert "signature" in val
 
-    # 4. Aktivasi ulang tanpa autentikasi HARUS ditolak (dulu memutar & membocorkan client_secret).
-    for path in ("/api/v1/validations/activate", "/api/v1/licenses/activate"):
-        again = client.post(path, json={"license_key": lic.license_key})
-        assert again.status_code == 409, again.text
-        assert "client_secret" not in again.text
-        assert "Rotate Credentials" in again.json()["detail"]
+    # 4. Alias endpoint test (/api/v1/licenses/activate)
+    alias_res = client.post(
+        "/api/v1/licenses/activate",
+        json={"license_key": lic.license_key},
+    )
+    assert alias_res.status_code == 200
+    alias_data = alias_res.json()
+    assert alias_data["success"] is True
+    assert alias_data["installation_code"] == data["installation_code"]
+    # Rotated credentials
+    assert alias_data["client_id"] != data["client_id"]

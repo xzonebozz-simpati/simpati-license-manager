@@ -21,7 +21,6 @@ def healthz():
         app=settings.APP_NAME,
         version=settings.APP_VERSION,
         environment=settings.APP_ENV,
-        features=["validation-nonce-echo"],
         timestamp=datetime.now(timezone.utc)
     )
 

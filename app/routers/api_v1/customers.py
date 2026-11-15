@@ -2,7 +2,7 @@
 
 from typing import List, Dict, Any
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, Body
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.schemas.customer import (
@@ -163,20 +163,13 @@ def change_customer_status(
     return updated
 
 
-@router.delete("/{customer_id}", summary="Permanently Delete Customer and All Related Data")
+@router.delete("/{customer_id}", summary="Safely Delete Customer with Relational Checks")
 def remove_customer(
     customer_id: UUID,
-    confirmation: str = Body(..., embed=True),
     db: Session = Depends(get_db),
     current_user: LicenseUser = Depends(require_authenticated_user)
 ):
-    """Permanently deletes a customer after exact organization-name confirmation."""
-    customer = get_customer_by_id(db=db, customer_id=customer_id)
-    if not customer:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pelanggan tidak ditemukan.")
-    if confirmation.strip() != customer.organization_name:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="Konfirmasi nama organisasi tidak cocok. Penghapusan dibatalkan.")
+    """Deletes customer only if no active licenses or installations exist."""
     success, message = delete_customer(db=db, customer_id=customer_id, user_id=current_user.id)
     if not success:
         raise HTTPException(

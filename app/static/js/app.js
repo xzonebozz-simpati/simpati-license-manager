@@ -409,8 +409,6 @@ document.addEventListener('DOMContentLoaded', () => {
     window.confirmDeleteCustomer = function(customerId, orgName) {
         pendingDeleteCustomerId = customerId;
         document.getElementById('deleteTargetOrgName').innerText = orgName;
-        const confirmationInput = document.getElementById('deleteCustomerNameConfirmation');
-        if (confirmationInput) confirmationInput.value = '';
         window.openModal('modalDeleteCustomerConfirm');
     };
 
@@ -419,24 +417,15 @@ document.addEventListener('DOMContentLoaded', () => {
         btnExecuteDelete.addEventListener('click', async () => {
             if (!pendingDeleteCustomerId) return;
 
-            const expectedName = document.getElementById('deleteTargetOrgName').innerText.trim();
-            const confirmation = document.getElementById('deleteCustomerNameConfirmation').value.trim();
-            if (confirmation !== expectedName) {
-                alert('Nama organisasi tidak cocok. Penghapusan dibatalkan.');
-                return;
-            }
-
             btnExecuteDelete.disabled = true;
-            btnExecuteDelete.innerText = 'Menghapus seluruh data...';
+            btnExecuteDelete.innerText = 'Memeriksa & Menghapus...';
 
             try {
                 const res = await fetch(`/api/v1/customers/${pendingDeleteCustomerId}`, {
                     method: 'DELETE',
                     headers: {
-                        'Content-Type': 'application/json',
                         'X-CSRF-Token': window.getCsrfToken()
                     },
-                    body: JSON.stringify({ confirmation }),
                     credentials: 'same-origin'
                 });
                 const data = await res.json();
@@ -457,7 +446,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('Kesalahan jaringan: ' + err.message);
             } finally {
                 btnExecuteDelete.disabled = false;
-                btnExecuteDelete.innerText = 'Hapus Permanen Semua Data';
+                btnExecuteDelete.innerText = 'Ya, Hapus Pelanggan';
                 pendingDeleteCustomerId = null;
             }
         });
@@ -1019,66 +1008,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     window.location.reload();
                 } else {
                     alert('Gagal memperpanjang lisensi: ' + (data.detail || 'Terjadi kesalahan.'));
-                }
-            } catch (err) {
-                alert('Kesalahan jaringan: ' + err.message);
-            } finally {
-                submitBtn.disabled = false;
-                submitBtn.innerText = originalText;
-            }
-        });
-    }
-
-    // Open Edit Validity (koreksi jangka waktu) Modal
-    window.openEditValidityModal = function(licenseId, licenseKey, validFrom, validUntil, graceDays) {
-        const fmt = (d) => d.split('-').reverse().join('-');
-        document.getElementById('evLicId').value = licenseId;
-        document.getElementById('evLicKey').value = licenseKey;
-        document.getElementById('evLicCurrent').value = fmt(validFrom) + ' s.d. ' + fmt(validUntil);
-        document.getElementById('evLicFrom').value = validFrom;
-        document.getElementById('evLicUntil').value = validUntil;
-        document.getElementById('evLicGrace').value = graceDays;
-        document.getElementById('evLicReason').value = '';
-        openModal('modalEditValidity');
-    };
-
-    const formEditValidity = document.getElementById('formEditValidity');
-    if (formEditValidity) {
-        formEditValidity.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const licId = document.getElementById('evLicId').value;
-            const submitBtn = formEditValidity.querySelector('button[type="submit"]');
-            const originalText = submitBtn.innerText;
-            submitBtn.disabled = true;
-            submitBtn.innerText = 'Menyimpan...';
-
-            const graceRaw = document.getElementById('evLicGrace').value;
-            const payload = {
-                valid_from: new Date(document.getElementById('evLicFrom').value + 'T00:00:00Z').toISOString(),
-                valid_until: new Date(document.getElementById('evLicUntil').value + 'T23:59:59Z').toISOString(),
-                grace_period_days: graceRaw === '' ? null : parseInt(graceRaw, 10),
-                reason: document.getElementById('evLicReason').value.trim()
-            };
-
-            try {
-                const res = await fetch(`/api/v1/licenses/${licId}/validity`, {
-                    method: 'PATCH',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-Token': window.getCsrfToken()
-                    },
-                    credentials: 'same-origin',
-                    body: JSON.stringify(payload)
-                });
-                const data = await res.json();
-                if (res.ok) {
-                    alert(data.message || 'Jangka waktu lisensi berhasil diubah!');
-                    window.location.reload();
-                } else {
-                    const detail = Array.isArray(data.detail)
-                        ? data.detail.map(d => d.msg).join('; ')
-                        : data.detail;
-                    alert('Gagal mengubah jangka waktu lisensi: ' + (detail || 'Terjadi kesalahan.'));
                 }
             } catch (err) {
                 alert('Kesalahan jaringan: ' + err.message);

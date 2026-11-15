@@ -94,7 +94,7 @@
                                     onclick="confirmDeleteCustomer('{{ c.id }}', '{{ c.organization_name | e }}')" 
                                     class="btn btn-secondary btn-sm" 
                                     style="border-color: rgba(239, 68, 68, 0.6); color: #f87171;" 
-                                    title="Hapus Permanen Pelanggan dan Seluruh Datanya"
+                                    title="Hapus Pelanggan (Cek Relasi)"
                                 >
                                     🗑️
                                 </button>
@@ -324,22 +324,19 @@
         <div class="modal-body">
             <div class="alert-box alert-warning">
                 <span>⚠️</span>
-                <span>Penghapusan permanen akan menghapus pelanggan, seluruh lisensi, instalasi, kredensial, validasi, dan riwayat lisensi terkait. Tindakan ini tidak dapat dibatalkan.</span>
+                <span>Pemeriksaan Relasi Aktif: Sistem menolak penghapusan jika pelanggan memiliki lisensi atau instalasi server.</span>
             </div>
             <p style="font-size: 13px; color: var(--text-main); margin-bottom: 12px;">
-                Untuk mengonfirmasi penghapusan permanen, ketik nama organisasi pelanggan berikut:
+                Apakah Anda yakin ingin menghapus data organisasi pelanggan:
             </p>
             <div style="background: rgba(0,0,0,0.4); padding: 12px; border-radius: 6px; border: 1px solid var(--border-color); text-align: center;">
                 <strong id="deleteTargetOrgName" style="color: var(--gold-light); font-size: 15px;"></strong>
             </div>
-            <input id="deleteCustomerNameConfirmation" class="form-control" type="text"
-                   placeholder="Ketik nama organisasi persis seperti di atas" autocomplete="off"
-                   style="margin-top:12px;" />
         </div>
         <div class="modal-footer">
             <button type="button" onclick="closeModal('modalDeleteCustomerConfirm')" class="btn btn-secondary">Batal</button>
             <button type="button" id="btnExecuteDeleteCustomer" class="btn btn-secondary" style="background: #991b1b; border-color: #ef4444; color: #fff;">
-                Hapus Permanen Semua Data
+                Ya, Hapus Pelanggan
             </button>
         </div>
     </div>

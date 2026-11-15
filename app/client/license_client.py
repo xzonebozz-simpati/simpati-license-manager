@@ -6,11 +6,6 @@ Menghubungkan aplikasi SIMPATI 555 ke SIMPATI LICENSE MANAGER:
 3. Verifikasi tanda tangan digital Ed25519 anti-tamper.
 4. Penyimpanan status lisensi lokal, offline grace period, dan penegakan Restricted Mode.
 """
-# CATATAN KEAMANAN: berkas ini hanya REFERENSI/contoh integrasi. Klien yang dipakai produksi
-# adalah pendaftaran555/license_client.py, yang sudah diperkeras (verifikasi tanda tangan efektif,
-# nonce anti-replay, cache ber-HMAC, fail-closed). Jangan memakai berkas ini apa adanya untuk
-# menegakkan lisensi: field status level-atas dan cache lokalnya tidak dilindungi.
-
 
 from __future__ import annotations
 
@@ -34,21 +29,6 @@ from cryptography.hazmat.primitives.asymmetric import ed25519
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, HTMLResponse
-
-
-class _MethodPreservingRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Pertahankan metode POST saat redirect (urllib bawaan mengubahnya menjadi GET -> 405)."""
-
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        if code not in (301, 302, 303, 307, 308):
-            return None
-        hdrs = {k: v for k, v in req.header_items() if k.lower() not in ("host", "content-length")}
-        return urllib.request.Request(newurl.replace(" ", "%20"), data=req.data, headers=hdrs,
-                                      origin_req_host=req.origin_req_host, unverifiable=True,
-                                      method=req.get_method())
-
-
-_OPENER = urllib.request.build_opener(_MethodPreservingRedirectHandler())
 
 logger = logging.getLogger("simpati.license_client")
 
@@ -131,7 +111,7 @@ class LicenseClient:
         url = f"{self.config.license_manager_url}/api/v1/licenses/root-public-key"
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
         try:
-            with _OPENER.open(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 pub_pem = data.get("public_key_pem")
                 if pub_pem:
@@ -206,7 +186,7 @@ class LicenseClient:
         )
 
         try:
-            with _OPENER.open(req, timeout=15) as resp:
+            with urllib.request.urlopen(req, timeout=15) as resp:
                 resp_data = json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as http_err:
             try:
@@ -251,7 +231,6 @@ class LicenseClient:
             "valid_until": payload.get("valid_until") or resp_data.get("valid_until"),
             "is_restricted_mode": bool(resp_data.get("is_restricted_mode", False)),
             "is_offline": False,
-            "offline_since": None,
             "grace_type": "CONTRACT_GRACE" if resp_data.get("validation_status") == "GRACE_PERIOD" else "NONE",
             "allowed_modules": resp_data.get("allowed_modules", []),
             "allowed_levels": resp_data.get("allowed_levels", []),
@@ -297,7 +276,7 @@ class LicenseClient:
         )
 
         try:
-            with _OPENER.open(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=10) as resp:
                 if resp.status == 200:
                     logger.debug("Heartbeat telemetri berhasil terkirim.")
                     return True
@@ -336,75 +315,30 @@ class LicenseClient:
             return None
 
     def _handle_validation_offline(self) -> Dict[str, Any]:
-        """Start Offline Grace on the first failed online validation and persist it."""
+        """Menangani kegagalan koneksi dengan skema Offline Grace Period."""
         cached = self.load_cached_state()
         now = datetime.now(timezone.utc)
 
         if cached and cached.get("validated_at"):
             try:
-                offline_since_raw = cached.get("offline_since")
-                if offline_since_raw:
-                    offline_since = datetime.fromisoformat(str(offline_since_raw).replace("Z", "+00:00"))
-                else:
-                    # First failure observed by this client. Persist this timestamp so
-                    # subsequent failures/restarts do not reset or pre-consume the grace.
-                    offline_since = now
-                if offline_since.tzinfo is None:
-                    offline_since = offline_since.replace(tzinfo=timezone.utc)
-                grace_limit = offline_since + timedelta(days=self.config.offline_grace_period_days)
-                cached["offline_since"] = offline_since.isoformat()
-                cached["is_offline"] = True
-
-                # Offline Grace tidak memperpanjang masa kontrak.
-                payload = cached.get("payload") or {}
-                valid_until_raw = cached.get("valid_until") or payload.get("valid_until")
-                contract_grace_days = cached.get("grace_period_days", payload.get("grace_period_days", 7))
-                contract_expired = False
-                contract_grace_active = False
-                if valid_until_raw:
-                    valid_until = datetime.fromisoformat(str(valid_until_raw).replace("Z", "+00:00"))
-                    if valid_until.tzinfo is None:
-                        valid_until = valid_until.replace(tzinfo=timezone.utc)
-                    contract_grace_deadline = valid_until + timedelta(days=max(0, int(contract_grace_days or 0)))
-                    contract_grace_active = valid_until < now <= contract_grace_deadline
-                    contract_expired = now > contract_grace_deadline
-
-                if now <= grace_limit and not contract_expired:
+                last_dt = datetime.fromisoformat(cached["validated_at"])
+                grace_limit = last_dt + timedelta(days=self.config.offline_grace_period_days)
+                if now <= grace_limit:
+                    logger.warning(
+                        f"Server License Manager offline. Mengaktifkan Masa Tenggang Offline hingga {grace_limit.isoformat()}."
+                    )
                     cached["validation_status"] = "GRACE_PERIOD"
                     cached["is_restricted_mode"] = False
-                    cached["grace_type"] = "CONTRACT_GRACE" if contract_grace_active else "OFFLINE_GRACE"
-                    self.save_cache_state(cached)
+                    cached["is_offline"] = True
+                    cached["grace_type"] = "OFFLINE_GRACE"
                     with self._lock:
                         self._cached_state = cached
-                    logger.warning(
-                        f"Server License Manager offline. Offline Grace dimulai {offline_since.isoformat()} "
-                        f"dan berlaku hingga {grace_limit.isoformat()}."
-                    )
                     return cached
+            except Exception:
+                pass
 
-                # Grace expired: keep the signed snapshot for read/export, but block mutations.
-                cached["validation_status"] = "RESTRICTED"
-                cached["is_restricted_mode"] = True
-                cached["grace_type"] = "EXPIRED_OFFLINE_GRACE"
-                cached["restricted_rules"] = {
-                    "login_allowed": True,
-                    "read_data_allowed": True,
-                    "export_backup_allowed": True,
-                    "write_mutations_blocked": True,
-                    "account_modifications_blocked": True,
-                    "uploads_blocked": True,
-                    "public_registration_blocked": True,
-                }
-                self.save_cache_state(cached)
-                with self._lock:
-                    self._cached_state = cached
-                logger.critical("Offline Grace telah habis. SIMPATI masuk Restricted Mode.")
-                return cached
-            except Exception as exc:
-                logger.warning("Tidak dapat menghitung Offline Grace dari cache: %s", exc)
-
-        # No trusted cache: restricted safely, preserving read/export where possible.
-        logger.critical("Cache lisensi tidak tersedia atau tidak valid. Memasuki RESTRICTED MODE.")
+        # Di luar masa tenggang atau tidak ada cache valid: Masuk ke RESTRICTED MODE
+        logger.critical("Masa tenggang offline telah habis atau cache tidak sah. Memasuki RESTRICTED MODE.")
         restricted_state = {
             "validation_status": "RESTRICTED",
             "is_restricted_mode": True,
@@ -422,8 +356,7 @@ class LicenseClient:
                 "uploads_blocked": True,
                 "public_registration_blocked": True
             },
-            "validated_at": now.isoformat(),
-            "offline_since": now.isoformat(),
+            "validated_at": now.isoformat()
         }
         with self._lock:
             self._cached_state = restricted_state
@@ -531,19 +464,17 @@ class LicenseClient:
         payload = state.get("payload") or {}
         now = datetime.now(timezone.utc)
         
-        # 1. Offline Grace hanya ditampilkan saat benar-benar offline.
-        offline_since_raw = state.get("offline_since")
+        # 1. Hitung sisa masa tenggang offline
+        validated_at_raw = state.get("validated_at")
         offline_grace_remaining = "-"
-        if state.get("is_offline") and offline_since_raw:
+        if validated_at_raw:
             try:
-                offline_since = datetime.fromisoformat(str(offline_since_raw).replace("Z", "+00:00"))
-                if offline_since.tzinfo is None:
-                    offline_since = offline_since.replace(tzinfo=timezone.utc)
-                deadline = offline_since + timedelta(days=self.config.offline_grace_period_days)
+                v_dt = datetime.fromisoformat(validated_at_raw)
+                deadline = v_dt + timedelta(days=self.config.offline_grace_period_days)
                 diff = deadline - now
                 if diff.total_seconds() > 0:
-                    total_hours = int(diff.total_seconds() // 3600)
-                    d, h = divmod(total_hours, 24)
+                    d = diff.days
+                    h = int(diff.seconds // 3600)
                     offline_grace_remaining = f"{d} hari {h} jam"
                 else:
                     offline_grace_remaining = "Masa tenggang offline telah habis"

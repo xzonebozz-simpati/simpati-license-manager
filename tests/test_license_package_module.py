@@ -2,7 +2,7 @@
 
 import json
 from datetime import datetime, timezone, timedelta
-from uuid import uuid4, UUID
+from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
@@ -384,98 +384,3 @@ def test_snapshot_immutability_on_package_change(client: TestClient, db_session,
     assert "SURVEI_GPS" not in det["modules"]
     assert "UMKM" not in det["modules"]
     assert det["signature_valid"] is True
-
-
-def test_edit_license_validity_shorten_and_resign(client: TestClient, db_session, auth_headers, sample_customer_and_inst):
-    """Koreksi jangka waktu salah input: bisa dipersingkat, snapshot ditandatangani ulang, riwayat tercatat."""
-    cust, _ = sample_customer_and_inst
-    pkg = db_session.query(LicensePackage).first()
-    now = datetime.now(timezone.utc)
-    hdrs = {"X-CSRF-Token": auth_headers["X-CSRF-Token"], "Cookie": auth_headers["cookie"]}
-
-    # Salah input: 5 tahun, seharusnya 6 bulan
-    create_resp = client.post(
-        "/api/v1/licenses",
-        json={
-            "customer_id": str(cust.id),
-            "package_id": str(pkg.id),
-            "valid_from": now.isoformat(),
-            "valid_until": (now + timedelta(days=365 * 5)).isoformat(),
-            "modules": ["CORE", "DATA"],
-        },
-        headers=hdrs,
-    )
-    assert create_resp.status_code == 201
-    lic_id = create_resp.json()["license_id"]
-    old_sig = create_resp.json()["signature"]
-
-    new_until = now + timedelta(days=180)
-    resp = client.patch(
-        f"/api/v1/licenses/{lic_id}/validity",
-        json={
-            "valid_from": now.isoformat(),
-            "valid_until": new_until.isoformat(),
-            "grace_period_days": 14,
-            "reason": "Salah input durasi saat penerbitan",
-        },
-        headers=hdrs,
-    )
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["signature"] != old_sig
-    assert resp.json()["grace_period_days"] == 14
-
-    det = client.get(f"/api/v1/licenses/{lic_id}/detail", headers={"Cookie": auth_headers["cookie"]}).json()
-    assert det["signature_valid"] is True
-    assert det["grace_period_days"] == 14
-    assert json.loads(det["snapshot_entitlements"])["valid_until"] == new_until.astimezone(timezone.utc).isoformat()
-    assert "VALIDITY_EDITED" in [h["action"] for h in det["history"]]
-
-    # Tanggal tidak valid & tanpa perubahan ditolak
-    bad = client.patch(
-        f"/api/v1/licenses/{lic_id}/validity",
-        json={"valid_from": now.isoformat(), "valid_until": (now - timedelta(days=1)).isoformat(), "reason": "tes"},
-        headers=hdrs,
-    )
-    assert bad.status_code == 400
-    same = client.patch(
-        f"/api/v1/licenses/{lic_id}/validity",
-        json={"valid_from": now.isoformat(), "valid_until": new_until.isoformat(), "grace_period_days": 14, "reason": "tes"},
-        headers=hdrs,
-    )
-    assert same.status_code == 400
-
-
-def test_edit_license_validity_revives_expired(client: TestClient, db_session, auth_headers, sample_customer_and_inst):
-    """Lisensi EXPIRED yang periodenya dikoreksi ke masa depan kembali aktif."""
-    cust, _ = sample_customer_and_inst
-    pkg = db_session.query(LicensePackage).first()
-    now = datetime.now(timezone.utc)
-    hdrs = {"X-CSRF-Token": auth_headers["X-CSRF-Token"], "Cookie": auth_headers["cookie"]}
-
-    create_resp = client.post(
-        "/api/v1/licenses",
-        json={
-            "customer_id": str(cust.id),
-            "package_id": str(pkg.id),
-            "valid_from": (now - timedelta(days=60)).isoformat(),
-            "valid_until": (now + timedelta(days=30)).isoformat(),
-            "modules": ["CORE"],
-        },
-        headers=hdrs,
-    )
-    lic_id = create_resp.json()["license_id"]
-    lic = db_session.query(License).filter(License.id == UUID(lic_id)).first()
-    lic.status = "EXPIRED"
-    db_session.commit()
-
-    resp = client.patch(
-        f"/api/v1/licenses/{lic_id}/validity",
-        json={
-            "valid_from": (now - timedelta(days=60)).isoformat(),
-            "valid_until": (now + timedelta(days=300)).isoformat(),
-            "reason": "Koreksi tanggal kedaluwarsa",
-        },
-        headers=hdrs,
-    )
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "ACTIVE"

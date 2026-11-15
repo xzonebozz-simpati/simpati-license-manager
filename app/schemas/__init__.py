@@ -34,7 +34,6 @@ from app.schemas.package import (
 from app.schemas.license import (
     LicenseCreate,
     LicenseExtend,
-    LicenseValidityUpdate,
     LicenseStatusUpdate,
     LicenseCapacityInput,
     LicenseHistoryResponse,
@@ -76,7 +75,6 @@ __all__ = [
     "PackageDetailResponse",
     "LicenseCreate",
     "LicenseExtend",
-    "LicenseValidityUpdate",
     "LicenseStatusUpdate",
     "LicenseCapacityInput",
     "LicenseHistoryResponse",

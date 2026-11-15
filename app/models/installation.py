@@ -12,11 +12,9 @@ class Installation(Base, UUIDMixin, TimestampMixin):
     """Customer-managed SIMPATI server deployment/instance."""
     __tablename__ = "installations"
 
-    # Nullable only to preserve legacy installations that predate customer links.
-    # New registrations still require customer_id in InstallationCreate/service validation.
-    customer_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    customer_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("customers.id", ondelete="CASCADE"),
-        nullable=True,
+        nullable=False,
         index=True
     )
     installation_code: Mapped[str] = mapped_column(String(60), unique=True, nullable=False, index=True)
@@ -30,7 +28,7 @@ class Installation(Base, UUIDMixin, TimestampMixin):
     last_heartbeat_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
-    customer: Mapped[Optional["Customer"]] = relationship("Customer", back_populates="installations")
+    customer: Mapped["Customer"] = relationship("Customer", back_populates="installations")
     credentials: Mapped[List["InstallationCredential"]] = relationship(
         "InstallationCredential",
         back_populates="installation",

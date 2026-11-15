@@ -11,8 +11,6 @@ class HealthResponse(BaseModel):
     app: str = Field(..., json_schema_extra={"example": "SIMPATI License Manager"})
     version: str = Field(..., json_schema_extra={"example": "1.0.0"})
     environment: str = Field(..., json_schema_extra={"example": "development"})
-    # Penanda kemampuan build ini (tidak bisa tertimpa env var seperti APP_VERSION).
-    features: list[str] = Field(default_factory=list, json_schema_extra={"example": ["validation-nonce-echo"]})
     timestamp: datetime
 
 

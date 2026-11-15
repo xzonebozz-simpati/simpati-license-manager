@@ -174,8 +174,6 @@ def test_offline_grace_period_handling(tmp_path):
         "validation_status": "ACTIVE",
         "is_restricted_mode": False,
         "validated_at": old_time,
-        "offline_since": (datetime.now(timezone.utc) - timedelta(days=10)).isoformat(),
-        "is_offline": True,
         "payload": payload_old,
         "signature": _sign_payload_canonical(payload_old)
     }

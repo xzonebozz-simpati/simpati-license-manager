@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     # General App Settings & Port Binding
     APP_ENV: str = "development"
     APP_NAME: str = "SIMPATI License Manager"
-    APP_VERSION: str = "1.1.0"
+    APP_VERSION: str = "1.0.0"
     APP_DEBUG: bool = False
     APP_HOST: str = "0.0.0.0"
     APP_PORT: int = Field(
