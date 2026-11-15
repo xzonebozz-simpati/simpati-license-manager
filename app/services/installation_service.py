@@ -9,6 +9,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.models.installation import Installation, InstallationCredential, InstallationEvent
+from app.models.customer import Customer
 from app.models.license import License, LicenseInstallation
 from app.models.operations import LicenseValidation
 from app.schemas.installation import (
@@ -161,6 +162,19 @@ def update_installation(
         return None
 
     changes: Dict[str, Any] = {}
+    if "customer_id" in data.model_fields_set:
+        if data.customer_id is not None:
+            customer = db.query(Customer).filter(Customer.id == data.customer_id).first()
+            if not customer:
+                raise ValueError("Pelanggan tidak ditemukan.")
+            if customer.status != "ACTIVE":
+                raise ValueError("Pelanggan tidak aktif dan tidak dapat dihubungkan.")
+        if data.customer_id != inst.customer_id:
+            changes["customer_id"] = {
+                "from": str(inst.customer_id) if inst.customer_id else None,
+                "to": str(data.customer_id) if data.customer_id else None,
+            }
+            inst.customer_id = data.customer_id
     if data.name is not None and data.name.strip() != inst.name:
         changes["name"] = {"from": inst.name, "to": data.name.strip()}
         inst.name = data.name.strip()

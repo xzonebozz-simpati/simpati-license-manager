@@ -125,12 +125,15 @@ def update_installation_endpoint(
     current_user: LicenseUser = Depends(require_authenticated_user),
 ):
     """Updates attributes of an existing installation (server domain, IP, environment, hardware signature, etc)."""
-    updated = update_installation(
-        db=db,
-        installation_id=installation_id,
-        data=payload,
-        user_id=current_user.id,
-    )
+    try:
+        updated = update_installation(
+            db=db,
+            installation_id=installation_id,
+            data=payload,
+            user_id=current_user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     if not updated:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

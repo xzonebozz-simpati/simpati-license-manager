@@ -29,6 +29,8 @@ class InstallationRegister(InstallationCreate):
 
 class InstallationUpdate(BaseModel):
     """Payload to update an existing installation."""
+    # Optional link to the central customer record. Omitted means unchanged.
+    customer_id: Optional[UUID] = None
     name: Optional[str] = Field(None, min_length=3, max_length=120)
     server_domain: Optional[str] = None
     server_ip: Optional[str] = None
