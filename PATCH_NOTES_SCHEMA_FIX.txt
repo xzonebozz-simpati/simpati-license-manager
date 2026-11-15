@@ -1,0 +1,12 @@
+SIMPATI LICENSE MANAGER v1.1.2 - SCHEMA COMPATIBILITY FIX
+
+Perbaikan:
+- Saat startup, aplikasi memeriksa kolom package_modules.is_mandatory.
+- Jika kolom belum ada, aplikasi menambahkannya dengan DEFAULT TRUE sebelum seeding.
+- Data/tabel yang sudah ada tidak dihapus atau dibuat ulang.
+- Perbaikan ini mengatasi error PostgreSQL UndefinedColumn pada package_modules.is_mandatory.
+
+Catatan:
+- Tidak mengubah kredensial atau DATABASE_URL.
+- Setelah deploy, periksa log startup untuk pesan: Kolom package_modules.is_mandatory berhasil ditambahkan.
+- Lalu pastikan seeding berhasil dan license_users memiliki akun admin sesuai Environment Variables.

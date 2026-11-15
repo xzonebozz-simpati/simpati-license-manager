@@ -12,6 +12,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.config import get_settings
 from app.database.connection import engine
+from sqlalchemy import inspect, text
 from app.models.base import Base
 from app.routers import health_router, web_router, api_v1_router
 from app.security import (
@@ -47,6 +48,20 @@ async def lifespan(app: FastAPI):
     try:
         Base.metadata.create_all(bind=engine)
         logger.info("Skema database terverifikasi.")
+
+        # Compatibility repair for databases created by an earlier schema version.
+        # create_all() does not add columns to existing tables. Preserve all rows.
+        inspector = inspect(engine)
+        if inspector.has_table("package_modules"):
+            existing_columns = {col["name"] for col in inspector.get_columns("package_modules")}
+            if "is_mandatory" not in existing_columns:
+                with engine.begin() as connection:
+                    connection.execute(text(
+                        "ALTER TABLE package_modules "
+                        "ADD COLUMN is_mandatory BOOLEAN NOT NULL DEFAULT TRUE"
+                    ))
+                logger.warning("Kolom package_modules.is_mandatory berhasil ditambahkan.")
+
         seed_initial_data()
     except Exception as exc:
         logger.warning(f"Koneksi DB saat startup: {exc}")
