@@ -50,6 +50,11 @@ def seed_initial_data():
             db.add(superadmin)
             db.flush()
 
+        # Persist the administrator independently. A later catalog/demo-data
+        # seeding error must never roll back the only login account.
+        db.commit()
+        logger.info("Akun Superadmin tersedia dan tersimpan.")
+
         # 2. Module Registry
         module_definitions = [
             ("CORE", "Core Platform SIMPATI", "Fondasi sistem inti, otentikasi, dan pengaturan", True),
