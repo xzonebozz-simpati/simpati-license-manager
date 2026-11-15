@@ -1,0 +1,12 @@
+SIMPATI LICENSE MANAGER v1.1.2 - SCHEMA COMPATIBILITY FIX
+
+Perubahan:
+- Startup memeriksa kolom package_modules.is_mandatory setelah create_all().
+- Jika kolom belum ada, startup menambahkannya dengan tipe BOOLEAN NOT NULL DEFAULT TRUE.
+- Startup memverifikasi ulang kolom sebelum menjalankan seed_initial_data().
+- Logging startup menggunakan logger.exception agar traceback kegagalan inisialisasi terlihat jelas.
+
+Catatan:
+- SQLAlchemy create_all() tidak menambahkan kolom baru ke tabel yang sudah ada; perbaikan ini menangani kondisi tersebut.
+- File ini belum diuji terhadap database Supabase produksi dan belum dideploy.
+- Jangan mengubah DATABASE_URL atau kredensial hanya berdasarkan patch ini.
