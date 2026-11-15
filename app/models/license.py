@@ -38,6 +38,7 @@ class License(Base, UUIDMixin, TimestampMixin):
     snapshot_entitlements: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     signature: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
     # Relationships
     customer: Mapped["Customer"] = relationship("Customer", back_populates="licenses")

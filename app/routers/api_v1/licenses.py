@@ -30,6 +30,7 @@ from app.services.license_service import (
 from app.services.validation_service import activate_client_license
 from app.security.dependencies import require_authenticated_user
 from fastapi import Request
+from datetime import datetime, timezone
 
 router = APIRouter(prefix="/api/v1/licenses", tags=["Licenses"])
 
@@ -77,7 +78,7 @@ def list_licenses_endpoint(
     _: LicenseUser = Depends(require_authenticated_user)
 ):
     """Retrieves list of issued licenses with live operational status."""
-    query = db.query(License)
+    query = db.query(License).filter(License.deleted_at.is_(None))
     if customer_id:
         query = query.filter(License.customer_id == customer_id)
     if package_id:
@@ -151,7 +152,8 @@ def get_license_endpoint(
     _: LicenseUser = Depends(require_authenticated_user)
 ):
     """Retrieves full license detail, entitlements, linked installations, and digital signature status."""
-    detail = get_license_detail(db=db, license_id=license_id)
+    lic_row = db.query(License).filter(License.id == license_id, License.deleted_at.is_(None)).first()
+    detail = get_license_detail(db=db, license_id=license_id) if lic_row else None
     if not detail:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lisensi tidak ditemukan.")
     return detail
@@ -257,3 +259,23 @@ def bind_installation_endpoint(
         "license_id": str(link.license_id),
         "installation_id": str(link.installation_id)
     }
+
+
+@router.delete("/{license_id}", summary="Move License to Recycle Bin")
+def soft_delete_license_endpoint(license_id: UUID, db: Session = Depends(get_db), current_user: LicenseUser = Depends(require_authenticated_user)):
+    lic = db.query(License).filter(License.id == license_id, License.deleted_at.is_(None)).first()
+    if not lic:
+        raise HTTPException(status_code=404, detail="Lisensi tidak ditemukan atau sudah berada di Recycle Bin.")
+    lic.deleted_at = datetime.now(timezone.utc)
+    db.commit()
+    return {"message": "Lisensi dipindahkan ke Recycle Bin.", "license_id": str(lic.id), "deleted_at": lic.deleted_at}
+
+
+@router.post("/{license_id}/restore", summary="Restore License from Recycle Bin")
+def restore_license_endpoint(license_id: UUID, db: Session = Depends(get_db), current_user: LicenseUser = Depends(require_authenticated_user)):
+    lic = db.query(License).filter(License.id == license_id, License.deleted_at.is_not(None)).first()
+    if not lic:
+        raise HTTPException(status_code=404, detail="Lisensi tidak ditemukan di Recycle Bin.")
+    lic.deleted_at = None
+    db.commit()
+    return {"message": "Lisensi berhasil dipulihkan.", "license_id": str(lic.id)}
