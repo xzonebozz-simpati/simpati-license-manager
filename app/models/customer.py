@@ -22,9 +22,11 @@ class Customer(Base, UUIDMixin, TimestampMixin):
     # Relationships
     installations: Mapped[List["Installation"]] = relationship(
         "Installation",
-        back_populates="customer"
+        back_populates="customer",
+        cascade="all, delete-orphan"
     )
     licenses: Mapped[List["License"]] = relationship(
         "License",
-        back_populates="customer"
+        back_populates="customer",
+        cascade="all, delete-orphan"
     )

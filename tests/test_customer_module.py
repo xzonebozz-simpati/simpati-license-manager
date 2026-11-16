@@ -150,78 +150,80 @@ def test_toggle_customer_status(client, db_session):
     assert res2.json()["status"] == "ACTIVE"
 
 
-def test_safe_delete_customer_rejected_if_has_license(client, db_session):
-    """Verifies that deleting a customer with active or historical licenses is strictly rejected."""
+def test_delete_customer_cascades_active_license_and_installation_data(client, db_session):
+    """Deleting a customer permanently removes active licenses and linked installation data."""
+    from app.models.license import LicenseInstallation, LicenseModule, LicenseCapacity
+    from app.models.installation import InstallationCredential, InstallationEvent
+    from app.models.operations import LicenseValidation, LicenseHistory, LicenseAuditLog
+    from app.models.security import RevocationRecord
+
     client.post("/api/v1/auth/login", json={"username": "superadmin", "password": "SuperAdmin@2026!"})
     csrf_token = client.cookies.get("simpati_csrf_token")
-
     cust = Customer(
-        customer_code=f"CUST-DEL-LIC-{uuid.uuid4().hex[:6]}",
-        organization_name="Customer With License",
-        contact_person="Contact",
-        contact_email="custlic@test.id"
+        customer_code=f"CUST-CASCADE-{uuid.uuid4().hex[:6]}",
+        organization_name=f"Cascade Org {uuid.uuid4().hex[:5]}",
+        contact_person="Contact", contact_email="cascade@test.id"
     )
     db_session.add(cust)
     db_session.commit()
 
     pkg = db_session.query(LicensePackage).first()
     now = datetime.now(timezone.utc)
-    lic = License(
-        license_key=f"LIC-GUARD-{uuid.uuid4().hex[:4].upper()}",
-        customer_id=cust.id,
-        package_id=pkg.id,
-        valid_from=now,
-        valid_until=now + timedelta(days=30),
-        status="ACTIVE"
-    )
-    db_session.add(lic)
+    inst = Installation(customer_id=cust.id, installation_code=f"INST-CAS-{uuid.uuid4().hex[:5]}",
+                       name="Cascade Server", status="ACTIVE")
+    lic = License(license_key=f"LIC-CAS-{uuid.uuid4().hex[:8].upper()}", customer_id=cust.id,
+                  package_id=pkg.id, valid_from=now, valid_until=now + timedelta(days=30), status="ACTIVE")
+    db_session.add_all([inst, lic])
+    db_session.flush()
+    from app.models.installation import InstallationCredential, InstallationEvent
+    from app.models.license import LicenseInstallation, LicenseModule, LicenseCapacity
+    db_session.add(InstallationCredential(installation_id=inst.id, client_id=f"CLT-{uuid.uuid4().hex[:12]}",
+                                           client_secret_hash="not-a-real-secret-hash"))
+    db_session.add(InstallationEvent(installation_id=inst.id, event_type="TEST"))
+    db_session.add(LicenseInstallation(license_id=lic.id, installation_id=inst.id))
+    db_session.add(LicenseModule(license_id=lic.id, module_code="CORE"))
+    db_session.add(LicenseCapacity(license_id=lic.id))
+    db_session.add(LicenseValidation(
+        license_id=lic.id, installation_id=inst.id, validation_token=f"VAL-{uuid.uuid4().hex}",
+        validation_status="VALID", next_validation_due=now + timedelta(hours=1)
+    ))
+    db_session.add(LicenseHistory(license_id=lic.id, action="TEST_CREATED"))
+    db_session.add(RevocationRecord(entity_type="LICENSE", entity_id=lic.id,
+                                    revocation_code="TEST", reason="test cleanup"))
     db_session.commit()
+    customer_id, license_id, installation_id = cust.id, lic.id, inst.id
 
-    # Attempt deletion
-    res = client.delete(
-        f"/api/v1/customers/{cust.id}",
-        headers={"X-CSRF-Token": csrf_token}
-    )
-    assert res.status_code == 400
-    assert "tidak dapat dihapus karena masih memiliki" in res.json()["detail"]
-    assert "lisensi komersial" in res.json()["detail"]
+    res = client.request("DELETE", f"/api/v1/customers/{customer_id}", json={"confirmation": cust.organization_name},
+                        headers={"X-CSRF-Token": csrf_token})
+    assert res.status_code == 200, res.text
+    assert "berhasil dihapus permanen" in res.json()["message"]
+    assert db_session.query(Customer).filter(Customer.id == customer_id).first() is None
+    assert db_session.query(License).filter(License.id == license_id).first() is None
+    assert db_session.query(Installation).filter(Installation.id == installation_id).first() is None
+    assert db_session.query(InstallationCredential).filter(InstallationCredential.installation_id == installation_id).count() == 0
+    assert db_session.query(InstallationEvent).filter(InstallationEvent.installation_id == installation_id).count() == 0
+    assert db_session.query(LicenseInstallation).filter(LicenseInstallation.license_id == license_id).count() == 0
+    assert db_session.query(LicenseModule).filter(LicenseModule.license_id == license_id).count() == 0
+    assert db_session.query(LicenseCapacity).filter(LicenseCapacity.license_id == license_id).count() == 0
+    assert db_session.query(LicenseValidation).filter(LicenseValidation.license_id == license_id).count() == 0
+    assert db_session.query(LicenseHistory).filter(LicenseHistory.license_id == license_id).count() == 0
+    assert db_session.query(RevocationRecord).filter(RevocationRecord.entity_id.in_([license_id, installation_id])).count() == 0
+    assert db_session.query(LicenseAuditLog).filter(
+        LicenseAuditLog.action_name == "CUSTOMER_PERMANENTLY_DELETED",
+        LicenseAuditLog.target_resource.like("customer:%")
+    ).count() >= 1
 
-    # Verify customer still exists
-    assert db_session.query(Customer).filter(Customer.id == cust.id).first() is not None
 
-
-def test_safe_delete_customer_rejected_if_has_installation(client, db_session):
-    """Verifies that deleting a customer with linked server installation is strictly rejected."""
+def test_delete_customer_requires_exact_name_confirmation(client, db_session):
     client.post("/api/v1/auth/login", json={"username": "superadmin", "password": "SuperAdmin@2026!"})
     csrf_token = client.cookies.get("simpati_csrf_token")
-
-    cust = Customer(
-        customer_code=f"CUST-DEL-INST-{uuid.uuid4().hex[:6]}",
-        organization_name="Customer With Server",
-        contact_person="Contact",
-        contact_email="custinst@test.id"
-    )
+    cust = Customer(customer_code=f"CUST-CONF-{uuid.uuid4().hex[:6]}", organization_name="Confirmation Org",
+                    contact_person="Contact", contact_email="confirm@test.id")
     db_session.add(cust)
     db_session.commit()
-
-    inst = Installation(
-        customer_id=cust.id,
-        installation_code=f"INST-GUARD-{uuid.uuid4().hex[:4]}",
-        name="Server Guard Test",
-        status="ACTIVE"
-    )
-    db_session.add(inst)
-    db_session.commit()
-
-    # Attempt deletion
-    res = client.delete(
-        f"/api/v1/customers/{cust.id}",
-        headers={"X-CSRF-Token": csrf_token}
-    )
+    res = client.request("DELETE", f"/api/v1/customers/{cust.id}", json={"confirmation": "Wrong Name"},
+                        headers={"X-CSRF-Token": csrf_token})
     assert res.status_code == 400
-    assert "server instalasi" in res.json()["detail"]
-
-    # Verify customer still exists
     assert db_session.query(Customer).filter(Customer.id == cust.id).first() is not None
 
 
@@ -241,8 +243,9 @@ def test_safe_delete_customer_clean_success(client, db_session):
     cust_id = cust.id
 
     # Deletion must succeed
-    res = client.delete(
-        f"/api/v1/customers/{cust_id}",
+    res = client.request(
+        "DELETE", f"/api/v1/customers/{cust_id}",
+        json={"confirmation": "Clean Customer"},
         headers={"X-CSRF-Token": csrf_token}
     )
     assert res.status_code == 200

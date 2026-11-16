@@ -8,7 +8,6 @@ from fastapi import FastAPI, Request, status
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, JSONResponse
-from sqlalchemy import inspect, text
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.config import get_settings
@@ -41,113 +40,16 @@ settings = get_settings()
 BASE_DIR = Path(__file__).resolve().parent
 
 
-def _log_missing_model_columns() -> None:
-    """Catat kolom di model ORM yang belum ada di tabel database yang sudah berjalan."""
-    try:
-        live = inspect(engine)
-        for table in Base.metadata.sorted_tables:
-            if not live.has_table(table.name):
-                continue
-            existing = {column["name"] for column in live.get_columns(table.name)}
-            missing = [column.name for column in table.columns if column.name not in existing]
-            if missing:
-                logger.error(
-                    "Skema tidak sinkron: tabel %s belum memiliki kolom %s. "
-                    "Jalankan migrasi Alembic atau tambahkan kolom secara manual.",
-                    table.name, ", ".join(missing),
-                )
-    except Exception:
-        logger.exception("Pemeriksaan sinkronisasi skema gagal (diabaikan).")
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan event handler for startup and graceful shutdown."""
     logger.info("Memulai SIMPATI License Manager...")
     try:
-        # Create missing tables first. SQLAlchemy create_all() does not add
-        # newly introduced columns to tables that already exist.
         Base.metadata.create_all(bind=engine)
-
-        inspector = inspect(engine)
-        if inspector.has_table("package_modules"):
-            columns = {column["name"] for column in inspector.get_columns("package_modules")}
-            if "is_mandatory" not in columns:
-                logger.warning(
-                    "Kolom package_modules.is_mandatory belum ada; menjalankan kompatibilitas skema."
-                )
-                with engine.begin() as connection:
-                    connection.execute(text(
-                        "ALTER TABLE package_modules "
-                        "ADD COLUMN is_mandatory BOOLEAN NOT NULL DEFAULT TRUE"
-                    ))
-                logger.info("Kolom package_modules.is_mandatory berhasil ditambahkan.")
-
-        # Compatibility for databases created before installations.customer_id
-        # was introduced. Keep legacy rows unassigned rather than inventing a
-        # customer relationship or deleting existing installation data.
-        if inspector.has_table("installations"):
-            installation_columns = {
-                column["name"] for column in inspect(engine).get_columns("installations")
-            }
-            if "customer_id" not in installation_columns:
-                logger.warning(
-                    "Kolom installations.customer_id belum ada; menambahkan kolom nullable "
-                    "untuk menjaga data instalasi lama."
-                )
-                with engine.begin() as connection:
-                    connection.execute(text(
-                        "ALTER TABLE installations ADD COLUMN customer_id UUID NULL "
-                        "REFERENCES customers(id) ON DELETE CASCADE"
-                    ))
-                logger.info(
-                    "Kolom installations.customer_id berhasil ditambahkan; "
-                    "data instalasi lama dibiarkan tanpa relasi pelanggan."
-                )
-
-        # Compatibility for databases created before licenses.deleted_at (Recycle Bin)
-        # was introduced. Tanpa kolom ini SEMUA query ORM ke tabel licenses gagal
-        # (daftar lisensi, detail, seed) dan Developer Console tidak menampilkan data apa pun.
-        if inspect(engine).has_table("licenses"):
-            license_columns = {
-                column["name"] for column in inspect(engine).get_columns("licenses")
-            }
-            if "deleted_at" not in license_columns:
-                logger.warning(
-                    "Kolom licenses.deleted_at belum ada; menambahkan kolom nullable "
-                    "(data lisensi lama tidak diubah)."
-                )
-                timestamp_type = "TIMESTAMPTZ" if engine.dialect.name == "postgresql" else "DATETIME"
-                with engine.begin() as connection:
-                    connection.execute(text(
-                        f"ALTER TABLE licenses ADD COLUMN deleted_at {timestamp_type} NULL"
-                    ))
-                logger.info("Kolom licenses.deleted_at berhasil ditambahkan.")
-            with engine.begin() as connection:
-                connection.execute(text(
-                    "CREATE INDEX IF NOT EXISTS ix_licenses_deleted_at ON licenses (deleted_at)"
-                ))
-
-        # Diagnostik: laporkan (tanpa mengubah apa pun) kolom model lain yang belum ada di database.
-        _log_missing_model_columns()
-
-        # Verify required compatibility columns before ORM queries/seeding.
-        verified_columns = {
-            column["name"] for column in inspect(engine).get_columns("package_modules")
-        }
-        if "is_mandatory" not in verified_columns:
-            raise RuntimeError(
-                "Skema database belum kompatibel: package_modules.is_mandatory tidak tersedia."
-            )
-
         logger.info("Skema database terverifikasi.")
         seed_initial_data()
-        logger.info("Inisialisasi database dan seeding data awal berhasil.")
-    except Exception:
-        logger.exception(
-            "Inisialisasi database gagal. Startup tetap berjalan, tetapi fitur database "
-            "mungkin tidak tersedia sampai masalah skema/koneksi diperbaiki."
-        )
+    except Exception as exc:
+        logger.warning(f"Koneksi DB saat startup: {exc}")
 
     yield
 

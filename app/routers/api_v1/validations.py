@@ -9,7 +9,11 @@ from app.models.license import License, LicenseInstallation
 from app.models.user import LicenseUser
 from app.schemas.license import LicenseValidationRequest, LicenseActivationRequest, LicenseActivationResponse
 from app.security.dependencies import require_installation_auth, require_authenticated_user
-from app.services.validation_service import validate_installation_license, activate_client_license
+from app.services.validation_service import (
+    validate_installation_license,
+    activate_client_license,
+    LicenseAlreadyActivatedError,
+)
 
 router = APIRouter(prefix="/api/v1/validations", tags=["Validations"])
 
@@ -34,6 +38,11 @@ def activate_license_endpoint(
         )
         res["server_url"] = base_url
         return res
+    except LicenseAlreadyActivatedError as ae:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(ae),
+        )
     except ValueError as ve:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -70,7 +79,8 @@ def verify_license(
         db=db,
         license_key=payload.license_key,
         installation_code=payload.installation_code,
-        request_ip=client_ip
+        request_ip=client_ip,
+        nonce=payload.nonce,
     )
     return result
 
