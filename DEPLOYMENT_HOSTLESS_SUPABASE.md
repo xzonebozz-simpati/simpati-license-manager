@@ -92,15 +92,15 @@ Aplikasi telah dilengkapi file `Procfile` di root direktori:
 
 ```text
 web: python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips "*"
-release: python -m scripts.validate_release_config && python -m alembic -c alembic.ini upgrade head && python -m scripts.verify_database_migrations
+release: python -m scripts.release_migrations
 ```
 
 * **Buildpack / Runtime**: Python 3.11+
 * **Build Command**: `pip install -r requirements.txt`
 * **Release Command (Wajib)**:
-  Atur Release Command Hostless sama persis seperti baris `release` di Procfile. Proses ini menolak konfigurasi selain PostgreSQL staging/production, menjalankan Alembic dari `alembic.ini` di repository, lalu memeriksa bahwa database/schema yang sama sudah mencapai head repository. Setiap kegagalan menghentikan Release dengan status non-zero sebelum Web menerima traffic.
+  Atur Release Command Hostless menjadi `python -m scripts.release_migrations`. Runner berpindah ke root repository, menolak konfigurasi selain PostgreSQL staging/production, menjalankan `python -m alembic upgrade head`, lalu memeriksa bahwa database/schema yang sama sudah mencapai head repository. Status gagal Alembic diteruskan ke Hostless sehingga Web tidak menerima traffic jika migrasi gagal.
   ```bash
-  python -m scripts.validate_release_config && python -m alembic -c alembic.ini upgrade head && python -m scripts.verify_database_migrations
+  python -m scripts.release_migrations
   ```
   Alembic CLI dan Web menggunakan engine aplikasi yang sama, yang dibangun dari `DATABASE_URL` dan search path PostgreSQL dari environment. Log Release dan Web menampilkan APP_ENV, sumber konfigurasi, driver, nama database/schema, serta revisi—tanpa URL atau kredensial. Proses Web hanya memeriksa koneksi dan revisi terhadap head di repository yang sedang dideploy; Web tidak menjalankan migrasi atau seed. Jika database baru perlu data awal, jalankan `python -m scripts.init_db` satu kali setelah meninjau dampaknya.
 * **Start Command**:

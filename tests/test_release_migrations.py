@@ -1,6 +1,8 @@
 """Tests for deployment migration target validation."""
 
 from pathlib import Path
+import sys
+from subprocess import CompletedProcess
 
 import pytest
 from alembic.config import Config
@@ -10,6 +12,7 @@ from sqlalchemy import create_engine, text
 from app.config import Settings
 from app.database import migrations
 from scripts import validate_release_config
+from scripts.release_migrations import run_alembic_upgrade
 
 
 def test_release_config_rejects_non_deployment_environment(monkeypatch):
@@ -38,6 +41,35 @@ def test_release_config_accepts_postgresql_without_exposing_credentials(monkeypa
     assert "DATABASE_DRIVER=postgresql+psycopg" in summary
     assert "secret" not in summary
     assert "db.example.test" not in summary
+
+
+def test_release_runner_invokes_alembic_from_repository_root():
+    project_root = Path("C:/deployed/repository")
+    calls = []
+
+    def run_command(command, **kwargs):
+        calls.append((command, kwargs))
+        return CompletedProcess(command, 0)
+
+    run_alembic_upgrade(project_root, run_command)
+
+    assert calls == [
+        (
+            [sys.executable, "-m", "alembic", "upgrade", "head"],
+            {"cwd": str(project_root), "check": False},
+        )
+    ]
+
+
+def test_release_runner_propagates_alembic_failure():
+    def fail_command(command, **kwargs):
+        assert kwargs["check"] is False
+        return CompletedProcess(command, 3)
+
+    with pytest.raises(SystemExit) as exc_info:
+        run_alembic_upgrade(Path("C:/deployed/repository"), fail_command)
+
+    assert exc_info.value.code == 3
 
 
 def test_revision_check_compares_database_with_repository_head(monkeypatch):
