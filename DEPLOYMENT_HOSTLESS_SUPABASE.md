@@ -102,7 +102,7 @@ release: python -m alembic upgrade head
   ```bash
   python -m alembic upgrade head
   ```
-  Startup aplikasi juga menerapkan migrasi yang tertunda dan akan gagal jika migrasi atau koneksi database gagal. `Base.metadata.create_all()` tidak digunakan sebagai pengganti migrasi.
+  Proses Web memeriksa koneksi dan revisi Alembic, tetapi tidak menjalankan migrasi atau seed pada setiap restart. Jika database baru perlu data awal, jalankan `python -m scripts.init_db` satu kali setelah meninjau dampaknya.
 * **Start Command**:
   ```bash
   python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips "*"

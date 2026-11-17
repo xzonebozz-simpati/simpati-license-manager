@@ -20,3 +20,25 @@ def test_startup_fails_when_database_migration_fails(monkeypatch):
     with pytest.raises(RuntimeError, match="database migration failed"):
         with TestClient(app):
             pass
+
+
+def test_production_startup_verifies_database_without_migrating_or_seeding(monkeypatch):
+    verified = []
+    monkeypatch.setattr("app.main.settings.APP_ENV", "staging")
+    monkeypatch.setattr(
+        "app.main.verify_database_schema_current",
+        lambda: verified.append(True),
+    )
+    monkeypatch.setattr(
+        "app.main.upgrade_database_schema",
+        lambda: pytest.fail("production startup must not run migrations"),
+    )
+    monkeypatch.setattr(
+        "app.main.seed_initial_data",
+        lambda: pytest.fail("production startup must not seed data"),
+    )
+
+    with TestClient(app):
+        pass
+
+    assert verified == [True]
