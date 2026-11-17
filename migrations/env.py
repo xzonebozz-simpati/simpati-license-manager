@@ -2,9 +2,7 @@ import os
 import sys
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
 from sqlalchemy.engine import Connection
-from sqlalchemy import pool
 
 from alembic import context
 
@@ -12,6 +10,7 @@ from alembic import context
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from app.config import get_settings
+from app.database.connection import engine
 from app.models.base import Base
 import app.models  # Loads all models
 
@@ -70,18 +69,7 @@ def run_migrations_online() -> None:
         _run_migrations(connection)
         return
 
-    configuration = config.get_section(config.config_ini_section)
-    if configuration is None:
-        configuration = {}
-    configuration["sqlalchemy.url"] = get_url()
-
-    connectable = engine_from_config(
-        configuration,
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
-
-    with connectable.connect() as connection:
+    with engine.connect() as connection:
         _run_migrations(connection)
 
 
