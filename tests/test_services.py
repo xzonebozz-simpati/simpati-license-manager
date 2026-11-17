@@ -5,6 +5,7 @@ from app.models.customer import Customer
 from app.models.installation import Installation
 from app.models.catalog import LicensePackage
 from app.models.license import License
+from app.models.operations import LicenseAuditLog
 from app.schemas.customer import CustomerCreate
 from app.schemas.license import LicenseCreate, LicenseCapacityInput
 from app.services.customer_service import create_customer, get_all_customers
@@ -117,6 +118,17 @@ def test_license_issuance_and_validation(db_session):
     from app.models.license import LicenseInstallation
     license_obj = issue_license(db=db_session, data=lic_data)
     assert license_obj.license_key.startswith("SMP-LIC-")
+    issue_audit = (
+        db_session.query(LicenseAuditLog)
+        .filter(
+            LicenseAuditLog.action_name == "LICENSE_ISSUED",
+            LicenseAuditLog.target_resource == f"license:{license_obj.id}",
+        )
+        .one()
+    )
+    assert issue_audit.target_resource == f"license:{license_obj.id}"
+    assert license_obj.license_key not in issue_audit.target_resource
+    assert license_obj.license_key not in str(issue_audit.details)
 
     # Create required LicenseInstallation binding before calling validate_installation_license.
     # The new validation_service requires an explicit binding record (license_installations table).

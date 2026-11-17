@@ -299,7 +299,7 @@ def issue_license(
         action_category="LICENSE",
         action_name="LICENSE_ISSUED",
         user_id=creator_user_id,
-        target_resource=f"license:{new_license.license_key}",
+        target_resource=f"license:{new_license.id}",
         details={
             "customer": customer.organization_name,
             "package": package.package_name,
@@ -386,7 +386,7 @@ def extend_license(
         action_category="LICENSE",
         action_name="LICENSE_EXTENDED",
         user_id=user_id,
-        target_resource=f"license:{license_obj.license_key}",
+        target_resource=f"license:{license_obj.id}",
         details={
             "old_until": old_until.isoformat(),
             "new_until": new_until.isoformat(),
@@ -500,7 +500,7 @@ def update_license_validity(
         action_category="LICENSE",
         action_name="LICENSE_VALIDITY_EDITED",
         user_id=user_id,
-        target_resource=f"license:{license_obj.license_key}",
+        target_resource=f"license:{license_obj.id}",
         details={
             "old_from": old_from.isoformat(),
             "old_until": old_until.isoformat(),
@@ -571,7 +571,7 @@ def update_license_status(
         action_category="LICENSE",
         action_name="LICENSE_STATUS_CHANGED",
         user_id=user_id,
-        target_resource=f"license:{license_obj.license_key}",
+        target_resource=f"license:{license_obj.id}",
         details={"from": old_status, "to": data.status, "reason": data.reason}
     )
     return license_obj
@@ -778,7 +778,7 @@ def soft_delete_license(db: Session, license_id: UUID, user_id: Optional[UUID] =
         action_category="LICENSE",
         action_name="LICENSE_DELETED",
         user_id=user_id,
-        target_resource=f"license:{license_obj.license_key}",
+        target_resource=f"license:{license_obj.id}",
         details={"license_id": str(license_obj.id), "deleted_at": license_obj.deleted_at.isoformat()},
     )
     return license_obj
