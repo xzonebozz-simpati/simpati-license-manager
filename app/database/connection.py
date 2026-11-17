@@ -5,12 +5,14 @@ as well as SQLite for local test suites.
 """
 
 import time
+import logging
 from typing import Dict, Any
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from app.config import get_settings
 
 settings = get_settings()
+logger = logging.getLogger("simpati.database")
 
 
 def create_db_engine() -> Engine:
@@ -43,7 +45,15 @@ def create_db_engine() -> Engine:
             "pool_recycle": settings.DB_POOL_RECYCLE,
         })
 
-    return create_engine(db_url, **engine_kwargs)
+    db_engine = create_engine(db_url, **engine_kwargs)
+    logger.info(
+        "SQLAlchemy engine initialized: APP_ENV=%s DATABASE_URL_SOURCE=%s DIALECT=%s DRIVER=%s",
+        settings.APP_ENV,
+        settings.database_url_source,
+        db_engine.dialect.name,
+        db_engine.dialect.driver,
+    )
+    return db_engine
 
 
 engine = create_db_engine()

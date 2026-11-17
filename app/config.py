@@ -4,6 +4,7 @@ Loads environment variables, validates configurations, and provides
 centralized application settings for Local, Staging, and Production (Hostless + Supabase).
 """
 
+import logging
 import os
 from functools import lru_cache
 from typing import List, Optional
@@ -11,6 +12,8 @@ from pydantic import Field, AliasChoices, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
+
+logger = logging.getLogger("simpati.database")
 
 
 class Settings(BaseSettings):
@@ -102,12 +105,22 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def require_postgresql_for_deployments(self) -> "Settings":
-        if self.APP_ENV.strip().lower() not in ("staging", "production"):
-            return self
-
         try:
             database_url = make_url(self.normalized_database_url)
         except ArgumentError:
+            database_url = None
+
+        logger.info(
+            "Database configuration: APP_ENV=%s DATABASE_URL_SOURCE=%s DATABASE_DRIVER=%s",
+            self.APP_ENV,
+            self.database_url_source,
+            database_url.drivername if database_url is not None else "invalid",
+        )
+
+        if self.APP_ENV.strip().lower() not in ("staging", "production"):
+            return self
+
+        if database_url is None:
             raise ValueError(
                 "DATABASE_URL must be a valid PostgreSQL URL in staging/production."
             ) from None
@@ -124,6 +137,14 @@ class Settings(BaseSettings):
             )
 
         return self
+
+    @property
+    def database_url_source(self) -> str:
+        if any(name.lower() == "database_url" for name in os.environ):
+            return "environment"
+        if "DATABASE_URL" in self.model_fields_set:
+            return "dotenv"
+        return "default"
 
     @property
     def normalized_database_url(self) -> str:
