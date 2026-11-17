@@ -102,6 +102,7 @@ release: python -m alembic upgrade head
   ```bash
   python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips "*"
   ```
+  Package `app` juga mengekspos objek ASGI yang sama secara lazy agar konfigurasi lama `app:app` tetap dapat dimuat; perintah kanonis tetap menggunakan `app.main:app`.
 
 ---
 

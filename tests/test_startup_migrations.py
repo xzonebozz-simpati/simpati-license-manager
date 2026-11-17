@@ -2,8 +2,13 @@
 
 import pytest
 from fastapi.testclient import TestClient
+from uvicorn.importer import import_from_string
 
 from app.main import app
+
+
+def test_legacy_uvicorn_target_resolves_fastapi_application():
+    assert import_from_string("app:app") is app
 
 
 def test_startup_fails_when_database_migration_fails(monkeypatch):
