@@ -28,7 +28,11 @@ from app.services.license_service import (
     get_root_public_key,
 )
 from app.services.validation_service import activate_client_license
-from app.security.dependencies import require_authenticated_user
+from app.security.dependencies import (
+    LicenseApiPrincipal,
+    require_authenticated_user,
+    require_license_api_principal,
+)
 from fastapi import Request
 
 router = APIRouter(prefix="/api/v1/licenses", tags=["Licenses"])
@@ -74,7 +78,7 @@ def list_licenses_endpoint(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    _: LicenseUser = Depends(require_authenticated_user)
+    _: LicenseApiPrincipal = Depends(require_license_api_principal)
 ):
     """Retrieves list of issued licenses with live operational status."""
     query = db.query(License)
@@ -123,11 +127,16 @@ def get_root_public_key_endpoint():
 def create_license_endpoint(
     payload: LicenseCreate,
     db: Session = Depends(get_db),
-    current_user: LicenseUser = Depends(require_authenticated_user)
+    principal: LicenseApiPrincipal = Depends(require_license_api_principal)
 ):
     """Issues a new commercial license with immutable snapshot entitlements signed using Ed25519."""
     try:
-        lic = issue_license(db=db, data=payload, creator_user_id=current_user.id)
+        lic = issue_license(
+            db=db,
+            data=payload,
+            creator_user_id=principal.user_id,
+            service_id=principal.service_id,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
@@ -148,7 +157,7 @@ def create_license_endpoint(
 def get_license_endpoint(
     license_id: UUID,
     db: Session = Depends(get_db),
-    _: LicenseUser = Depends(require_authenticated_user)
+    _: LicenseApiPrincipal = Depends(require_license_api_principal)
 ):
     """Retrieves full license detail, entitlements, linked installations, and digital signature status."""
     detail = get_license_detail(db=db, license_id=license_id)
@@ -162,11 +171,17 @@ def extend_license_endpoint(
     license_id: UUID,
     payload: LicenseExtend,
     db: Session = Depends(get_db),
-    current_user: LicenseUser = Depends(require_authenticated_user)
+    principal: LicenseApiPrincipal = Depends(require_license_api_principal)
 ):
     """Extends license expiration date and creates a new cryptographic signature."""
     try:
-        lic = extend_license(db=db, license_id=license_id, data=payload, user_id=current_user.id)
+        lic = extend_license(
+            db=db,
+            license_id=license_id,
+            data=payload,
+            user_id=principal.user_id,
+            service_id=principal.service_id,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
@@ -185,11 +200,17 @@ def update_validity_endpoint(
     license_id: UUID,
     payload: LicenseValidityUpdate,
     db: Session = Depends(get_db),
-    current_user: LicenseUser = Depends(require_authenticated_user)
+    principal: LicenseApiPrincipal = Depends(require_license_api_principal)
 ):
     """Mengoreksi periode masa berlaku lisensi (maju/mundur) dan menandatangani ulang snapshot."""
     try:
-        lic = update_license_validity(db=db, license_id=license_id, data=payload, user_id=current_user.id)
+        lic = update_license_validity(
+            db=db,
+            license_id=license_id,
+            data=payload,
+            user_id=principal.user_id,
+            service_id=principal.service_id,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
@@ -213,11 +234,17 @@ def update_status_endpoint(
     license_id: UUID,
     payload: LicenseStatusUpdate,
     db: Session = Depends(get_db),
-    current_user: LicenseUser = Depends(require_authenticated_user)
+    principal: LicenseApiPrincipal = Depends(require_license_api_principal)
 ):
     """Suspends, reactivates, or revokes a commercial license with mandatory audit reason."""
     try:
-        lic = update_license_status(db=db, license_id=license_id, data=payload, user_id=current_user.id)
+        lic = update_license_status(
+            db=db,
+            license_id=license_id,
+            data=payload,
+            user_id=principal.user_id,
+            service_id=principal.service_id,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 

@@ -24,6 +24,15 @@ from app.security.crypto import sign_payload, verify_signature, generate_ed25519
 settings = get_settings()
 
 
+def _audit_details(
+    details: Dict[str, Any],
+    service_id: Optional[str],
+) -> Dict[str, Any]:
+    if service_id is None:
+        return details
+    return {**details, "service_id": service_id}
+
+
 def ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
     """Ensures datetime is timezone-aware in UTC (normalizes SQLite naive datetimes)."""
     if dt is None:
@@ -152,7 +161,8 @@ def compute_license_status(license_obj: License) -> str:
 def issue_license(
     db: Session,
     data: LicenseCreate,
-    creator_user_id: Optional[UUID] = None
+    creator_user_id: Optional[UUID] = None,
+    service_id: Optional[str] = None,
 ) -> License:
     """
     Issues a new commercial license with immutable snapshot entitlements
@@ -283,12 +293,12 @@ def issue_license(
         action_name="LICENSE_ISSUED",
         user_id=creator_user_id,
         target_resource=f"license:{new_license.license_key}",
-        details={
+        details=_audit_details({
             "customer": customer.organization_name,
             "package": package.package_name,
             "status": new_license.status,
             "signature_length": len(signature_b64)
-        }
+        }, service_id)
     )
     return new_license
 
@@ -301,7 +311,8 @@ def extend_license(
     db: Session,
     license_id: UUID,
     data: LicenseExtend,
-    user_id: Optional[UUID] = None
+    user_id: Optional[UUID] = None,
+    service_id: Optional[str] = None,
 ) -> License:
     """Extends the expiration date of a license and signs the updated snapshot."""
     license_obj = db.query(License).filter(License.id == license_id).first()
@@ -368,11 +379,11 @@ def extend_license(
         action_name="LICENSE_EXTENDED",
         user_id=user_id,
         target_resource=f"license:{license_obj.license_key}",
-        details={
+        details=_audit_details({
             "old_until": old_until.isoformat(),
             "new_until": new_until.isoformat(),
             "reason": data.reason
-        }
+        }, service_id)
     )
     return license_obj
 
@@ -385,7 +396,8 @@ def update_license_validity(
     db: Session,
     license_id: UUID,
     data: LicenseValidityUpdate,
-    user_id: Optional[UUID] = None
+    user_id: Optional[UUID] = None,
+    service_id: Optional[str] = None,
 ) -> License:
     """
     Mengoreksi periode masa berlaku (valid_from, valid_until, opsional grace period)
@@ -480,7 +492,7 @@ def update_license_validity(
         action_name="LICENSE_VALIDITY_EDITED",
         user_id=user_id,
         target_resource=f"license:{license_obj.license_key}",
-        details={
+        details=_audit_details({
             "old_from": old_from.isoformat(),
             "old_until": old_until.isoformat(),
             "new_from": new_from.isoformat(),
@@ -488,7 +500,7 @@ def update_license_validity(
             "old_grace": old_grace,
             "new_grace": new_grace,
             "reason": data.reason,
-        }
+        }, service_id)
     )
     return license_obj
 
@@ -501,7 +513,8 @@ def update_license_status(
     db: Session,
     license_id: UUID,
     data: LicenseStatusUpdate,
-    user_id: Optional[UUID] = None
+    user_id: Optional[UUID] = None,
+    service_id: Optional[str] = None,
 ) -> License:
     """Updates license operational status (ACTIVE / SUSPENDED / REVOKED) with audit trail."""
     license_obj = db.query(License).filter(License.id == license_id).first()
@@ -545,7 +558,10 @@ def update_license_status(
         action_name="LICENSE_STATUS_CHANGED",
         user_id=user_id,
         target_resource=f"license:{license_obj.license_key}",
-        details={"from": old_status, "to": data.status, "reason": data.reason}
+        details=_audit_details(
+            {"from": old_status, "to": data.status, "reason": data.reason},
+            service_id,
+        )
     )
     return license_obj
 

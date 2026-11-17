@@ -182,6 +182,30 @@ DATABASE_URL=postgresql+psycopg2://postgres:password_anda@localhost:5432/simpati
 ```
 *(Catatan: Jika Anda ingin mencoba secara langsung tanpa menyiapkan server PostgreSQL terlebih dahulu, biarkan `DATABASE_URL=sqlite:///./simpati_license.db`).*
 
+### Autentikasi server-to-server Universal API (Opsional)
+
+Untuk mengaktifkan identitas layanan, simpan `UNIVERSAL_API_SERVICE_ID` dan
+`UNIVERSAL_API_SERVICE_SECRET` sebagai Environment Variables/Secrets pada
+deployment License Manager, lalu konfigurasi pasangan kredensial yang sama pada
+deployment Universal API. Secret harus acak dengan panjang minimal 32 byte.
+Jangan simpan kredensial ini di kode, Desktop, atau log; komunikasi HTTP Basic
+hanya boleh dilakukan melalui HTTPS.
+
+Identitas ini tidak membuat akun pengguna dan hanya dapat:
+
+- Membaca daftar pelanggan.
+- Membaca daftar paket, katalog modul, dan detail paket.
+- Membaca daftar/detail lisensi, membuat lisensi, memperpanjang, mengubah masa
+  berlaku, dan mengubah status lisensi.
+
+Selama rotasi, pasang secret baru sebagai `UNIVERSAL_API_SERVICE_SECRET` dan
+secret lama sebagai `UNIVERSAL_API_SERVICE_PREVIOUS_SECRET`. Setelah Universal
+API memakai secret baru, hapus variabel previous secret lalu restart aplikasi.
+Untuk mencabut seluruh akses layanan, hapus ID dan kedua secret dari environment
+kemudian restart. Konfigurasi parsial atau secret yang terlalu pendek akan
+membuat aplikasi gagal startup. Setiap permintaan layanan yang terotorisasi dan
+perubahan lisensi dicatat dalam audit log dengan `service_id`.
+
 ### Langkah 5: Inisialisasi Database & Seeding Data Awal
 Jalankan script inisialisasi:
 ```powershell

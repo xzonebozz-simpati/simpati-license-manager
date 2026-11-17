@@ -60,11 +60,22 @@ Pada dashboard proyek Hostless, masuk ke menu **Environment Variables / Secrets*
 | `SECRET_KEY` | *(acak 64 karakter hex)* | Kunci JWT session & CSRF (`python -c "import secrets; print(secrets.token_hex(32))"`) |
 | `DATABASE_URL` | `postgresql://postgres:[PASS]@db...:5432/postgres?sslmode=require` | Connection string PostgreSQL Supabase |
 | `ED25519_PRIVATE_KEY_PEM` | `"-----BEGIN PRIVATE KEY-----\nMC4CAQAwB...-----END PRIVATE KEY-----"` | Private key untuk tanda tangan digital lisensi |
+| `UNIVERSAL_API_SERVICE_ID` | `simpati-universal-api` | ID layanan untuk autentikasi server-to-server; opsional jika integrasi tidak digunakan |
+| `UNIVERSAL_API_SERVICE_SECRET` | *(secret acak minimal 32 byte)* | Secret HTTP Basic layanan; simpan sebagai secret dan gunakan hanya melalui HTTPS |
+| `UNIVERSAL_API_SERVICE_PREVIOUS_SECRET` | *(kosong, kecuali selama rotasi)* | Secret lama sementara agar rotasi tidak memutus integrasi |
 | `ADMIN_USERNAME` | `superadmin` | Username Superadmin awal |
 | `ADMIN_PASSWORD` | *(password kuat)* | Password Superadmin awal |
 | `ADMIN_EMAIL` | `admin@simpati555.id` | Email Superadmin awal |
 | `FORWARDED_ALLOW_IPS` | `*` | Mempercayai header reverse proxy Hostless |
 | `CORS_ORIGINS` | `https://simpati.id,http://localhost:8000` | Domain instans yang berhak akses CORS |
+
+Identitas Universal API bukan akun pengguna. Aksesnya terbatas pada operasi
+daftar pelanggan, katalog paket/modul, dan pembuatan/pembacaan/perubahan lisensi.
+Rotasi dilakukan dengan memasang secret baru sebagai secret utama dan
+`UNIVERSAL_API_SERVICE_PREVIOUS_SECRET` sebagai secret lama, lalu menghapus
+secret lama setelah pemanggil beralih dan me-restart aplikasi. Pencabutan penuh
+dilakukan dengan menghapus ID serta kedua secret dan me-restart aplikasi.
+Permintaan layanan dan perubahan lisensi mencatat `service_id` pada audit log.
 
 > **Catatan Port:** Hostless secara otomatis menyuntikkan variabel `PORT`. Aplikasi sudah dikonfigurasi untuk membaca port dinamis tersebut secara otomatis.
 

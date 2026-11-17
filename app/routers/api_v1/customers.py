@@ -26,7 +26,11 @@ from app.services.customer_service import (
     get_customer_installations,
     get_customer_licenses
 )
-from app.security.dependencies import require_authenticated_user
+from app.security.dependencies import (
+    LicenseApiPrincipal,
+    require_authenticated_user,
+    require_license_api_principal,
+)
 from app.models.user import LicenseUser
 
 router = APIRouter(prefix="/api/v1/customers", tags=["Customers"])
@@ -37,7 +41,7 @@ def list_customers(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    _: LicenseUser = Depends(require_authenticated_user)
+    _: LicenseApiPrincipal = Depends(require_license_api_principal)
 ):
     """Returns list of registered customer organizations."""
     return get_all_customers(db=db, skip=skip, limit=limit)
