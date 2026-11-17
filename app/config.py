@@ -7,8 +7,10 @@ centralized application settings for Local, Staging, and Production (Hostless + 
 import os
 from functools import lru_cache
 from typing import List, Optional
-from pydantic import Field, AliasChoices, SecretStr
+from pydantic import Field, AliasChoices, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 
 
 class Settings(BaseSettings):
@@ -59,8 +61,8 @@ class Settings(BaseSettings):
     DB_USER: str = "postgres"
     DB_PASSWORD: str = "postgres"
     DB_NAME: str = "simpati_license_db"
-    DATABASE_URL: str = Field(
-        default="sqlite:///./simpati_license.db",
+    DATABASE_URL: SecretStr = Field(
+        default=SecretStr("sqlite:///./simpati_license.db"),
         description="SQLAlchemy Database URL (PostgreSQL Supabase URL for Staging/Production, SQLite for Local Testing)"
     )
 
@@ -98,10 +100,35 @@ class Settings(BaseSettings):
     FORWARDED_ALLOW_IPS: str = Field(default="*", description="Trusted reverse proxy IP list for Hostless")
     CORS_ORIGINS: str = "http://localhost:8000,http://127.0.0.1:8000"
 
+    @model_validator(mode="after")
+    def require_postgresql_for_deployments(self) -> "Settings":
+        if self.APP_ENV.strip().lower() not in ("staging", "production"):
+            return self
+
+        try:
+            database_url = make_url(self.normalized_database_url)
+        except ArgumentError:
+            raise ValueError(
+                "DATABASE_URL must be a valid PostgreSQL URL in staging/production."
+            ) from None
+
+        if (
+            database_url.get_backend_name() != "postgresql"
+            or database_url.drivername
+            not in ("postgresql+psycopg", "postgresql+psycopg2")
+            or not database_url.host
+            or not database_url.database
+        ):
+            raise ValueError(
+                "DATABASE_URL must use a supported PostgreSQL driver and include a host and database in staging/production."
+            )
+
+        return self
+
     @property
     def normalized_database_url(self) -> str:
         """Normalize PostgreSQL URL to use psycopg v3."""
-        url = self.DATABASE_URL.strip()
+        url = self.DATABASE_URL.get_secret_value().strip()
 
         if url.startswith("postgres://"):
             url = url.replace("postgres://", "postgresql://", 1)
@@ -123,7 +150,7 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         """Check if running in staging or production mode."""
-        return self.APP_ENV.lower() in ("production", "staging")
+        return self.APP_ENV.strip().lower() in ("production", "staging")
 
     @property
     def effective_cookie_secure(self) -> bool:

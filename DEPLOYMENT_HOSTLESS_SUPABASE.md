@@ -69,6 +69,11 @@ Pada dashboard proyek Hostless, masuk ke menu **Environment Variables / Secrets*
 | `FORWARDED_ALLOW_IPS` | `*` | Mempercayai header reverse proxy Hostless |
 | `CORS_ORIGINS` | `https://simpati.id,http://localhost:8000` | Domain instans yang berhak akses CORS |
 
+Pada `APP_ENV=staging` atau `production`, aplikasi mewajibkan `DATABASE_URL`
+PostgreSQL yang valid dan menolak SQLite sebelum membuat engine. Startup,
+session, seeding, dan Alembic menggunakan URL tersebut; SQLite hanya untuk
+development dan pengujian.
+
 Identitas Universal API bukan akun pengguna. Aksesnya terbatas pada operasi
 daftar pelanggan, katalog paket/modul, dan pembuatan/pembacaan/perubahan lisensi.
 Rotasi dilakukan dengan memasang secret baru sebagai secret utama dan
