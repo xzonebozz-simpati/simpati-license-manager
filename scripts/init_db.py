@@ -10,9 +10,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import logging
 import secrets
 from datetime import datetime, timezone, timedelta
-from app.database.connection import engine
 from app.database.session import SessionLocal
-from app.models.base import Base
+from app.database.migrations import upgrade_database_schema
 from app.models.user import LicenseUser
 from app.models.catalog import LicensePackage, ModuleRegistry, ModuleDependency, PackageModule
 from app.models.customer import Customer
@@ -310,9 +309,9 @@ def seed_initial_data():
 
 
 def main():
-    """Initializes tables and seeds data."""
-    print("Membuat seluruh tabel skema database...")
-    Base.metadata.create_all(bind=engine)
+    """Applies database migrations and seeds initial data."""
+    print("Menerapkan migrasi database Alembic...")
+    upgrade_database_schema()
     print("Menyemai data awal (Superadmin, Modul, Paket, Pengaturan)...")
     seed_initial_data()
     print("Database siap digunakan.")

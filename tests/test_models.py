@@ -54,3 +54,10 @@ def test_customer_and_installation_creation(db_session):
 
     assert inst.customer.id == cust.id
     assert len(cust.installations) == 1
+
+
+def test_license_deleted_at_matches_soft_delete_migration():
+    deleted_at = License.__table__.c.deleted_at
+
+    assert deleted_at.nullable is True
+    assert any(index.name == "ix_licenses_deleted_at" for index in License.__table__.indexes)

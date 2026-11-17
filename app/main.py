@@ -11,8 +11,7 @@ from fastapi.responses import RedirectResponse, JSONResponse
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.config import get_settings
-from app.database.connection import engine
-from app.models.base import Base
+from app.database.migrations import upgrade_database_schema
 from app.routers import health_router, web_router, api_v1_router
 from app.security import (
     UnauthenticatedWebUserException,
@@ -46,12 +45,9 @@ async def lifespan(app: FastAPI):
     """Application lifespan event handler for startup and graceful shutdown."""
     logger.info("Memulai SIMPATI License Manager...")
     validate_universal_api_service_configuration()
-    try:
-        Base.metadata.create_all(bind=engine)
-        logger.info("Skema database terverifikasi.")
-        seed_initial_data()
-    except Exception as exc:
-        logger.warning(f"Koneksi DB saat startup: {exc}")
+    upgrade_database_schema()
+    logger.info("Migrasi database Alembic selesai.")
+    seed_initial_data()
 
     yield
 

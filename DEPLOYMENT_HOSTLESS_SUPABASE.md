@@ -92,12 +92,12 @@ release: python -m alembic upgrade head
 
 * **Buildpack / Runtime**: Python 3.11+
 * **Build Command**: `pip install -r requirements.txt`
-* **Release Command (Migrasi Otomatis)**:
-  Jika platform Hostless mendukung release phase, jalankan:
+* **Release Command (Wajib)**:
+  Jalankan migrasi sebelum aplikasi menerima traffic:
   ```bash
   python -m alembic upgrade head
   ```
-  *Jika Hostless tidak memiliki fitur release phase, perintah migrasi dapat dijalankan sekali melalui Hostless Web Console / SSH, atau sistem akan otomatis memvalidasi skema melalui lifespan startup `Base.metadata.create_all()`.*
+  Startup aplikasi juga menerapkan migrasi yang tertunda dan akan gagal jika migrasi atau koneksi database gagal. `Base.metadata.create_all()` tidak digunakan sebagai pengganti migrasi.
 * **Start Command**:
   ```bash
   python app.py

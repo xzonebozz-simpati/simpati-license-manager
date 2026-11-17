@@ -27,7 +27,10 @@ from app.services.license_service import (
     bind_installation_to_license,
     get_root_public_key,
 )
-from app.services.validation_service import activate_client_license
+from app.services.validation_service import (
+    LicenseAlreadyActivatedError,
+    activate_client_license,
+)
 from app.security.dependencies import (
     LicenseApiPrincipal,
     require_authenticated_user,
@@ -58,6 +61,11 @@ def activate_license_alias_endpoint(
         )
         res["server_url"] = base_url
         return res
+    except LicenseAlreadyActivatedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        )
     except ValueError as ve:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
