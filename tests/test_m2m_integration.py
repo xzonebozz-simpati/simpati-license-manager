@@ -98,6 +98,15 @@ def _make_basic_auth(client_id: str, client_secret: str) -> dict:
     return {"Authorization": f"Basic {b64}"}
 
 
+def _validation_payload(license_key: str, installation_code: str) -> dict:
+    return {
+        "license_key": license_key,
+        "installation_code": installation_code,
+        "nonce": secrets.token_hex(32),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 def test_verify_requires_m2m_basic_auth(client, db_session):
     """Verify endpoint rejects requests without auth or with invalid secrets."""
     fix = _setup_m2m_fixture(db_session)
@@ -105,7 +114,7 @@ def test_verify_requires_m2m_basic_auth(client, db_session):
     # 1. No Authorization header -> 401
     resp = client.post(
         "/api/v1/validations/verify",
-        json={"license_key": fix["license"].license_key, "installation_code": fix["inst1"].installation_code}
+        json=_validation_payload(fix["license"].license_key, fix["inst1"].installation_code)
     )
     assert resp.status_code == 401
 
@@ -113,7 +122,7 @@ def test_verify_requires_m2m_basic_auth(client, db_session):
     bad_headers = _make_basic_auth(fix["client_id"], "WrongSecretKey!")
     resp = client.post(
         "/api/v1/validations/verify",
-        json={"license_key": fix["license"].license_key, "installation_code": fix["inst1"].installation_code},
+        json=_validation_payload(fix["license"].license_key, fix["inst1"].installation_code),
         headers=bad_headers
     )
     assert resp.status_code == 401
@@ -126,10 +135,7 @@ def test_verify_blocks_installation_code_mismatch(client, db_session):
 
     resp = client.post(
         "/api/v1/validations/verify",
-        json={
-            "license_key": fix["license"].license_key,
-            "installation_code": fix["inst2"].installation_code  # Mismatched!
-        },
+        json=_validation_payload(fix["license"].license_key, fix["inst2"].installation_code),
         headers=headers
     )
     assert resp.status_code == 403
@@ -143,7 +149,7 @@ def test_verify_unbound_installation_rejected_with_signature(client, db_session)
 
     resp = client.post(
         "/api/v1/validations/verify",
-        json={"license_key": fix["license"].license_key, "installation_code": fix["inst1"].installation_code},
+        json=_validation_payload(fix["license"].license_key, fix["inst1"].installation_code),
         headers=headers
     )
     assert resp.status_code == 200
@@ -171,7 +177,7 @@ def test_verify_bound_license_success_with_ed25519_signature(client, db_session)
     headers = _make_basic_auth(fix["client_id"], fix["client_secret"])
     resp = client.post(
         "/api/v1/validations/verify",
-        json={"license_key": fix["license"].license_key, "installation_code": fix["inst1"].installation_code},
+        json=_validation_payload(fix["license"].license_key, fix["inst1"].installation_code),
         headers=headers
     )
     assert resp.status_code == 200
@@ -214,7 +220,7 @@ def test_verify_bound_to_different_installation_is_unbound(client, db_session):
     headers = _make_basic_auth(fix["client_id"], fix["client_secret"])
     resp = client.post(
         "/api/v1/validations/verify",
-        json={"license_key": fix["license"].license_key, "installation_code": fix["inst1"].installation_code},
+        json=_validation_payload(fix["license"].license_key, fix["inst1"].installation_code),
         headers=headers
     )
     assert resp.status_code == 200

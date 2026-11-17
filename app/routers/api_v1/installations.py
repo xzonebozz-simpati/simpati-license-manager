@@ -33,7 +33,7 @@ from app.services.installation_service import (
     rotate_installation_credentials,
     generate_enrollment_config,
 )
-from app.security.dependencies import require_authenticated_user, require_installation_auth
+from app.security.dependencies import require_superadmin, require_installation_auth
 
 router = APIRouter(prefix="/api/v1/installations", tags=["Installations"])
 
@@ -45,7 +45,7 @@ def list_installations(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    _: LicenseUser = Depends(require_authenticated_user),
+    _: LicenseUser = Depends(require_superadmin),
 ):
     """Retrieves registered SIMPATI installations with optional filters."""
     query = db.query(Installation)
@@ -61,7 +61,7 @@ def register_installation(
     payload: InstallationCreate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: LicenseUser = Depends(require_authenticated_user),
+    current_user: LicenseUser = Depends(require_superadmin),
 ):
     """
     Registers a new SIMPATI server deployment under a customer organization.
@@ -105,7 +105,7 @@ def register_installation(
 def get_installation(
     installation_id: UUID,
     db: Session = Depends(get_db),
-    _: LicenseUser = Depends(require_authenticated_user),
+    _: LicenseUser = Depends(require_superadmin),
 ):
     """Retrieves full installation profile including credentials, activity events, and license links."""
     detail = get_installation_detail(db, installation_id)
@@ -122,7 +122,7 @@ def update_installation_endpoint(
     installation_id: UUID,
     payload: InstallationUpdate,
     db: Session = Depends(get_db),
-    current_user: LicenseUser = Depends(require_authenticated_user),
+    current_user: LicenseUser = Depends(require_superadmin),
 ):
     """Updates attributes of an existing installation (server domain, IP, environment, hardware signature, etc)."""
     updated = update_installation(
@@ -144,7 +144,7 @@ def set_status_endpoint(
     installation_id: UUID,
     payload: InstallationStatusUpdate,
     db: Session = Depends(get_db),
-    current_user: LicenseUser = Depends(require_authenticated_user),
+    current_user: LicenseUser = Depends(require_superadmin),
 ):
     """Activates, suspends, or revokes an installation instance."""
     try:
@@ -171,7 +171,7 @@ def register_public_key_endpoint(
     installation_id: UUID,
     payload: InstallationPublicKeyRegister,
     db: Session = Depends(get_db),
-    current_user: LicenseUser = Depends(require_authenticated_user),
+    current_user: LicenseUser = Depends(require_superadmin),
 ):
     """Registers or updates the Ed25519 public key (PEM format) for this installation."""
     try:
@@ -196,7 +196,7 @@ def register_public_key_endpoint(
 def rotate_credentials_endpoint(
     installation_id: UUID,
     db: Session = Depends(get_db),
-    current_user: LicenseUser = Depends(require_authenticated_user),
+    current_user: LicenseUser = Depends(require_superadmin),
 ):
     """
     Revokes the current active API credentials and issues a fresh client_id and client_secret.
@@ -226,7 +226,7 @@ def get_enrollment_config_endpoint(
     installation_id: UUID,
     request: Request,
     db: Session = Depends(get_db),
-    _: LicenseUser = Depends(require_authenticated_user),
+    _: LicenseUser = Depends(require_superadmin),
 ):
     """Generates configuration parameters and .env template for SIMPATI 555 client setup."""
     base_url = str(request.base_url).rstrip("/")
@@ -243,9 +243,9 @@ def get_enrollment_config_endpoint(
 def delete_installation_endpoint(
     installation_id: UUID,
     db: Session = Depends(get_db),
-    current_user: LicenseUser = Depends(require_authenticated_user),
+    current_user: LicenseUser = Depends(require_superadmin),
 ):
-    """Safely deletes an installation only if no active licenses are linked to it."""
+    """Deletes an installation and its links while keeping its licenses intact."""
     success, message = delete_installation(
         db=db,
         installation_id=installation_id,

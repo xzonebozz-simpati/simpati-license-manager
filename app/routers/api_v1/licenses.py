@@ -26,12 +26,13 @@ from app.services.license_service import (
     get_license_detail,
     bind_installation_to_license,
     get_root_public_key,
+    soft_delete_license,
 )
 from app.services.validation_service import (
     activate_client_license,
     LicenseAlreadyActivatedError,
 )
-from app.security.dependencies import require_authenticated_user
+from app.security.dependencies import require_superadmin
 from fastapi import Request
 
 router = APIRouter(prefix="/api/v1/licenses", tags=["Licenses"])
@@ -67,11 +68,6 @@ def activate_license_alias_endpoint(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(ve),
         )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Terjadi kesalahan saat mengaktifkan lisensi: {str(e)}",
-        )
 
 
 @router.get("", summary="List Commercial Licenses")
@@ -82,10 +78,10 @@ def list_licenses_endpoint(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    _: LicenseUser = Depends(require_authenticated_user)
+    _: LicenseUser = Depends(require_superadmin)
 ):
     """Retrieves list of issued licenses with live operational status."""
-    query = db.query(License)
+    query = db.query(License).filter(License.deleted_at.is_(None))
     if customer_id:
         query = query.filter(License.customer_id == customer_id)
     if package_id:
@@ -131,7 +127,7 @@ def get_root_public_key_endpoint():
 def create_license_endpoint(
     payload: LicenseCreate,
     db: Session = Depends(get_db),
-    current_user: LicenseUser = Depends(require_authenticated_user)
+    current_user: LicenseUser = Depends(require_superadmin)
 ):
     """Issues a new commercial license with immutable snapshot entitlements signed using Ed25519."""
     try:
@@ -156,7 +152,7 @@ def create_license_endpoint(
 def get_license_endpoint(
     license_id: UUID,
     db: Session = Depends(get_db),
-    _: LicenseUser = Depends(require_authenticated_user)
+    _: LicenseUser = Depends(require_superadmin)
 ):
     """Retrieves full license detail, entitlements, linked installations, and digital signature status."""
     detail = get_license_detail(db=db, license_id=license_id)
@@ -170,7 +166,7 @@ def extend_license_endpoint(
     license_id: UUID,
     payload: LicenseExtend,
     db: Session = Depends(get_db),
-    current_user: LicenseUser = Depends(require_authenticated_user)
+    current_user: LicenseUser = Depends(require_superadmin)
 ):
     """Extends license expiration date and creates a new cryptographic signature."""
     try:
@@ -193,7 +189,7 @@ def update_validity_endpoint(
     license_id: UUID,
     payload: LicenseValidityUpdate,
     db: Session = Depends(get_db),
-    current_user: LicenseUser = Depends(require_authenticated_user)
+    current_user: LicenseUser = Depends(require_superadmin)
 ):
     """Mengoreksi periode masa berlaku lisensi (maju/mundur) dan menandatangani ulang snapshot."""
     try:
@@ -221,7 +217,7 @@ def update_status_endpoint(
     license_id: UUID,
     payload: LicenseStatusUpdate,
     db: Session = Depends(get_db),
-    current_user: LicenseUser = Depends(require_authenticated_user)
+    current_user: LicenseUser = Depends(require_superadmin)
 ):
     """Suspends, reactivates, or revokes a commercial license with mandatory audit reason."""
     try:
@@ -242,7 +238,7 @@ def bind_installation_endpoint(
     license_id: UUID,
     payload: dict,
     db: Session = Depends(get_db),
-    current_user: LicenseUser = Depends(require_authenticated_user)
+    current_user: LicenseUser = Depends(require_superadmin)
 ):
     """Binds an installation to a commercial license if quota permits."""
     raw_inst_id = payload.get("installation_id")
@@ -265,3 +261,16 @@ def bind_installation_endpoint(
         "license_id": str(link.license_id),
         "installation_id": str(link.installation_id)
     }
+
+
+@router.delete("/{license_id}", summary="Delete License")
+def delete_license_endpoint(
+    license_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: LicenseUser = Depends(require_superadmin),
+):
+    """Soft-deletes a license and prevents further activation or validation."""
+    license_obj = soft_delete_license(db, license_id, user_id=current_user.id)
+    if not license_obj:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lisensi tidak ditemukan.")
+    return {"message": f"Lisensi '{license_obj.license_key}' berhasil dihapus.", "license_id": str(license_obj.id)}

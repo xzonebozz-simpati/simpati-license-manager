@@ -78,6 +78,11 @@ def require_web_user(
     """Enforces that a web dashboard visitor is authenticated, redirecting to login if not."""
     if not user:
         raise UnauthenticatedWebUserException(next_url=request.url.path)
+    if user.role != "SUPERADMIN":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Akses dashboard memerlukan hak License Superadmin."
+        )
     return user
 
 

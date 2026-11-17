@@ -22,7 +22,7 @@ from app.services.package_service import (
     set_package_status,
     get_package_detail,
 )
-from app.security.dependencies import require_authenticated_user
+from app.security.dependencies import require_superadmin
 
 router = APIRouter(prefix="/api/v1/packages", tags=["Packages"])
 
@@ -33,7 +33,7 @@ def list_packages_endpoint(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    _: LicenseUser = Depends(require_authenticated_user)
+    _: LicenseUser = Depends(require_superadmin)
 ):
     """Retrieves all commercial packages with optional active filter."""
     query = db.query(LicensePackage)
@@ -62,7 +62,7 @@ def list_packages_endpoint(
 @router.get("/modules/available", summary="List Available Modules Registry")
 def list_available_modules(
     db: Session = Depends(get_db),
-    _: LicenseUser = Depends(require_authenticated_user)
+    _: LicenseUser = Depends(require_superadmin)
 ):
     """Returns all functional application modules available for package bundling."""
     modules = db.query(ModuleRegistry).order_by(ModuleRegistry.is_core.desc(), ModuleRegistry.module_code.asc()).all()
@@ -83,7 +83,7 @@ def list_available_modules(
 def create_package_endpoint(
     payload: PackageCreate,
     db: Session = Depends(get_db),
-    current_user: LicenseUser = Depends(require_authenticated_user)
+    current_user: LicenseUser = Depends(require_superadmin)
 ):
     """Creates a new commercial license package."""
     try:
@@ -111,7 +111,7 @@ def create_package_endpoint(
 def get_package_endpoint(
     package_id: UUID,
     db: Session = Depends(get_db),
-    _: LicenseUser = Depends(require_authenticated_user)
+    _: LicenseUser = Depends(require_superadmin)
 ):
     """Retrieves full package specification, modules, and commercial configurations."""
     detail = get_package_detail(db, package_id)
@@ -125,7 +125,7 @@ def update_package_endpoint(
     package_id: UUID,
     payload: PackageUpdate,
     db: Session = Depends(get_db),
-    current_user: LicenseUser = Depends(require_authenticated_user)
+    current_user: LicenseUser = Depends(require_superadmin)
 ):
     """Updates attributes of an existing package."""
     updated = update_package(db=db, package_id=package_id, data=payload, user_id=current_user.id)
@@ -152,7 +152,7 @@ def set_status_endpoint(
     package_id: UUID,
     payload: dict,
     db: Session = Depends(get_db),
-    current_user: LicenseUser = Depends(require_authenticated_user)
+    current_user: LicenseUser = Depends(require_superadmin)
 ):
     """Activates or deactivates a package."""
     is_active = bool(payload.get("is_active", True))

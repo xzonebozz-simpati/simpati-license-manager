@@ -77,7 +77,7 @@ class LicenseConfig:
         default_factory=lambda: os.getenv("LICENSE_MANAGER_URL", "http://127.0.0.1:8000").rstrip("/")
     )
     license_key: str = field(
-        default_factory=lambda: os.getenv("SIMPATI_LICENSE_KEY", "SMP-LIC-2026-A1B2-C3D4")
+        default_factory=lambda: os.getenv("SIMPATI_LICENSE_KEY", "")
     )
     installation_code: str = field(
         default_factory=lambda: os.getenv("SIMPATI_INSTALLATION_CODE", "INST-2026-DPD-01")
@@ -201,7 +201,7 @@ class LicenseClient:
         req_payload = {
             "license_key": self.config.license_key,
             "installation_code": self.config.installation_code,
-            "nonce": f"simpati-{secrets.token_hex(8)}",
+            "nonce": f"simpati-{secrets.token_hex(32)}",
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
@@ -234,6 +234,9 @@ class LicenseClient:
         if not sig_hex or not payload:
             logger.critical("Respons License Manager tidak menyertakan tanda tangan digital Ed25519!")
             return self._handle_validation_failure("Missing Ed25519 signature in response")
+        if payload.get("nonce") != req_payload["nonce"]:
+            logger.critical("Respons validasi tidak terikat pada nonce permintaan saat ini.")
+            return self._handle_validation_failure("Validation response nonce mismatch")
 
         try:
             self.verify_signature(payload, sig_hex)

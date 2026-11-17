@@ -252,8 +252,8 @@ def test_installation_heartbeat_telemetry(client: TestClient, auth_headers, samp
     assert det_data["last_heartbeat_at"] is not None
 
 
-def test_installation_safe_delete_with_license_guard(client: TestClient, db_session, auth_headers, sample_customer):
-    """Tests that an installation cannot be deleted while linked to commercial licenses."""
+def test_installation_delete_removes_bindings_and_preserves_license(client: TestClient, db_session, auth_headers, sample_customer):
+    """Deleting an installation removes its bindings without deleting the commercial license."""
     from datetime import datetime, timezone, timedelta
     from app.models.catalog import LicensePackage
     pkg = db_session.query(LicensePackage).first()
@@ -289,24 +289,15 @@ def test_installation_safe_delete_with_license_guard(client: TestClient, db_sess
     db_session.add(link)
     db_session.commit()
 
-    # 3. Try to delete installation: MUST FAIL
-    del_fail = client.delete(
+    # 3. Delete installation and ensure only its related records are removed.
+    del_resp = client.delete(
         f"/api/v1/installations/{inst_id}",
         headers={"X-CSRF-Token": auth_headers["X-CSRF-Token"], "Cookie": auth_headers["cookie"]}
     )
-    assert del_fail.status_code == 400
-    assert "tidak dapat dihapus karena masih terhubung" in del_fail.json()["detail"]
-
-    # 4. Remove license link and retry: MUST SUCCEED
-    db_session.delete(link)
-    db_session.commit()
-
-    del_ok = client.delete(
-        f"/api/v1/installations/{inst_id}",
-        headers={"X-CSRF-Token": auth_headers["X-CSRF-Token"], "Cookie": auth_headers["cookie"]}
-    )
-    assert del_ok.status_code == 200
-    assert "berhasil dihapus" in del_ok.json()["message"]
+    assert del_resp.status_code == 200
+    assert "ikatan lisensi dihapus" in del_resp.json()["message"]
+    assert db_session.query(License).filter(License.id == lic.id).first() is not None
+    assert db_session.query(LicenseInstallation).filter(LicenseInstallation.id == link.id).first() is None
 
 
 def test_installation_enrollment_config(client: TestClient, auth_headers, sample_customer):

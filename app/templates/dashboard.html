@@ -110,6 +110,9 @@
                         </td>
                         <td>
                             {% set inst_code = (lic.installations[0].installation.installation_code) if (lic.installations and lic.installations|length > 0 and lic.installations[0].installation) else ((lic.customer.installations[0].installation_code) if (lic.customer and lic.customer.installations and lic.customer.installations|length > 0) else '') %}
+                            <button onclick="viewDashboardLicenseDetail('{{ lic.id }}')" class="btn btn-secondary btn-sm" title="Lihat detail lisensi">
+                                👁️ Detail
+                            </button>
                             <button onclick="testValidation('{{ lic.license_key }}', '{{ inst_code }}')" class="btn btn-secondary btn-sm" title="Uji Validasi Berkala">
                                 🛡️ Uji Validasi
                             </button>
@@ -125,6 +128,38 @@
                 {% endif %}
             </tbody>
         </table>
+    </div>
+</div>
+
+<div id="modalDashboardLicenseDetail" class="modal-overlay">
+    <div class="modal-container" style="max-width: 700px;">
+        <div class="modal-header">
+            <div class="modal-title">📜 Detail Lisensi</div>
+            <button onclick="closeModal('modalDashboardLicenseDetail')" class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                <div><small>Kunci Lisensi</small><div id="dashboardDetailKey" class="font-mono">-</div></div>
+                <div><small>Status</small><div id="dashboardDetailStatus">-</div></div>
+                <div><small>Pelanggan</small><div id="dashboardDetailCustomer">-</div></div>
+                <div><small>Paket</small><div id="dashboardDetailPackage">-</div></div>
+                <div><small>Masa Berlaku</small><div id="dashboardDetailValidity">-</div></div>
+                <div><small>Tipe / Grace Period</small><div id="dashboardDetailType">-</div></div>
+                <div><small>Tanda Tangan</small><div id="dashboardDetailSignature">-</div></div>
+                <div><small>Maksimum Instalasi</small><div id="dashboardDetailMaxInstallations">-</div></div>
+            </div>
+            <div style="margin-top:16px;">
+                <strong>Modul Lisensi</strong>
+                <div id="dashboardDetailModules" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;"></div>
+            </div>
+            <div style="margin-top:16px;">
+                <strong>Instalasi Terhubung</strong>
+                <ul id="dashboardDetailInstallations" style="margin:8px 0 0; padding-left:20px;"></ul>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" onclick="closeModal('modalDashboardLicenseDetail')" class="btn btn-secondary">Tutup</button>
+        </div>
     </div>
 </div>
 

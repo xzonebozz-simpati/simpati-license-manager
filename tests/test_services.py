@@ -164,3 +164,6 @@ def test_web_routes_render_html(client):
         resp = client.get(route)
         assert resp.status_code == 200
         assert "SIMPATI" in resp.text
+    dashboard = client.get("/")
+    assert "viewDashboardLicenseDetail" in dashboard.text
+    assert "modalDashboardLicenseDetail" in dashboard.text

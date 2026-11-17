@@ -7,7 +7,7 @@ centralized application settings for Local, Staging, and Production (Hostless + 
 import os
 from functools import lru_cache
 from typing import List, Optional
-from pydantic import Field, AliasChoices
+from pydantic import Field, AliasChoices, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -86,6 +86,25 @@ class Settings(BaseSettings):
     # Reverse Proxy & Cloud Networking
     FORWARDED_ALLOW_IPS: str = Field(default="*", description="Trusted reverse proxy IP list for Hostless")
     CORS_ORIGINS: str = "http://localhost:8000,http://127.0.0.1:8000"
+
+    @model_validator(mode="after")
+    def validate_production_secrets(self):
+        """Reject known bootstrap secrets when running in staging or production."""
+        if self.is_production:
+            if (
+                self.ADMIN_PASSWORD == "SuperAdmin@2026!"
+                or self.ADMIN_PASSWORD.upper().startswith("CHANGE-ME")
+                or len(self.ADMIN_PASSWORD) < 16
+            ):
+                raise ValueError("ADMIN_PASSWORD must be a unique value of at least 16 characters in production.")
+            if (
+                self.SECRET_KEY == "simpati-super-secret-key-change-in-production-min-32-chars"
+                or self.SECRET_KEY.upper().startswith("CHANGE-ME")
+                or self.SECRET_KEY.startswith("change-this-to-")
+                or len(self.SECRET_KEY) < 32
+            ):
+                raise ValueError("SECRET_KEY must be a unique value of at least 32 characters in production.")
+        return self
 
     @property
     def normalized_database_url(self) -> str:

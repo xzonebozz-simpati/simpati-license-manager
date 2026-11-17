@@ -22,8 +22,8 @@ from app.models.region import Region
 from app.models.security import SigningKey
 from app.config import get_settings
 from app.models.operations import SystemSetting, LicenseAuditLog
-from app.security.hashing import hash_password
-from app.security.crypto import generate_ed25519_keypair
+from app.security.hashing import hash_password, verify_password
+from app.services.license_service import get_root_public_key
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("simpati.scripts.init_db")
@@ -49,6 +49,17 @@ def seed_initial_data():
             )
             db.add(superadmin)
             db.flush()
+        if settings.is_production:
+            for user in db.query(LicenseUser).all():
+                if verify_password("SuperAdmin@2026!", user.password_hash):
+                    if user.username == admin_uname:
+                        user.password_hash = hash_password(settings.ADMIN_PASSWORD)
+                    else:
+                        user.is_active = False
+                    for session in user.sessions:
+                        if session.revoked_at is None:
+                            session.revoked_at = datetime.now(timezone.utc)
+                    logger.warning("Akun yang masih memakai password bootstrap lama dinonaktifkan/dirotasi.")
 
         # 2. Module Registry
         module_definitions = [
@@ -190,8 +201,8 @@ def seed_initial_data():
         # 8. Cryptographic Signing Key Record
         signing_key_id = "KEY-SIMPATI-ROOT-V1"
         key_record = db.query(SigningKey).filter(SigningKey.key_identifier == signing_key_id).first()
+        pub_pem = get_root_public_key()
         if not key_record:
-            _, pub_pem = generate_ed25519_keypair()
             db.add(SigningKey(
                 key_identifier=signing_key_id,
                 algorithm="Ed25519",
@@ -199,8 +210,34 @@ def seed_initial_data():
                 key_vault_reference="vault:simpati-license-root-key",
                 is_active=True
             ))
+        else:
+            key_record.public_key_pem = pub_pem
 
-        # 9. Initial Customer, Installation, & Active Commercial License for instant local readiness
+        if settings.is_production:
+            legacy_demo_license = db.query(License).filter(
+                License.license_key == "SMP-LIC-2026-A1B2-C3D4",
+                License.deleted_at.is_(None),
+            ).first()
+            if legacy_demo_license:
+                legacy_demo_license.deleted_at = datetime.now(timezone.utc)
+                legacy_demo_license.status = "REVOKED"
+                for link in legacy_demo_license.installations:
+                    link.is_active = False
+
+            legacy_demo_installation = db.query(Installation).filter(
+                Installation.installation_code == "INST-2026-DPD-01",
+            ).first()
+            if legacy_demo_installation:
+                legacy_demo_installation.status = "REVOKED"
+                for credential in legacy_demo_installation.credentials:
+                    credential.is_active = False
+                    credential.revoked_at = datetime.now(timezone.utc)
+
+            db.commit()
+            logger.info("Data contoh dilewati dan lisensi demo lama dinonaktifkan di staging/production.")
+            return
+
+        # 9. Initial Customer, Installation, & Active Commercial License for local readiness
         cust = db.query(Customer).filter(Customer.customer_code == "CUST-2026-DPD-JABAR").first()
         if not cust:
             cust = Customer(

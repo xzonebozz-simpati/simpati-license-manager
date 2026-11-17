@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.models.installation import Installation, InstallationCredential, InstallationEvent
 from app.models.license import License, LicenseInstallation
 from app.models.operations import LicenseValidation
+from app.models.security import RevocationRecord
 from app.schemas.installation import (
     InstallationCreate,
     InstallationUpdate,
@@ -237,28 +238,22 @@ def delete_installation(
     user_id: Optional[UUID] = None,
 ) -> Tuple[bool, str]:
     """
-    Safely deletes an installation only if it has no active linked licenses.
-    Events and credentials are cascade-deleted automatically.
+    Deletes an installation and its bindings, credentials, events, and validations.
     """
     inst = get_installation_by_id(db, installation_id)
     if not inst:
         return False, "Instalasi tidak ditemukan."
 
-    # Guard: active license links
-    active_links = (
-        db.query(LicenseInstallation)
-        .filter(LicenseInstallation.installation_id == installation_id)
-        .count()
-    )
-    if active_links > 0:
-        return False, (
-            f"Instalasi '{inst.name}' tidak dapat dihapus karena masih terhubung dengan "
-            f"{active_links} lisensi komersial. Cabut seluruh kaitannya terlebih dahulu."
-        )
-
     code = inst.installation_code
     name = inst.name
+    linked_license_count = db.query(LicenseInstallation).filter(
+        LicenseInstallation.installation_id == installation_id,
+    ).count()
 
+    db.query(RevocationRecord).filter(
+        RevocationRecord.entity_type == "INSTALLATION",
+        RevocationRecord.entity_id == installation_id,
+    ).delete(synchronize_session=False)
     db.delete(inst)
     db.commit()
 
@@ -268,9 +263,12 @@ def delete_installation(
         action_name="INSTALLATION_DELETED",
         user_id=user_id,
         target_resource=f"installation:{code}",
-        details={"deleted_installation": name},
+        details={"deleted_installation": name, "removed_license_bindings": linked_license_count},
     )
-    return True, f"Instalasi '{name}' ({code}) berhasil dihapus secara aman."
+    return True, (
+        f"Instalasi '{name}' ({code}) berhasil dihapus. "
+        f"{linked_license_count} ikatan lisensi dihapus; lisensi tetap tersedia."
+    )
 
 
 # ---------------------------------------------------------------------------

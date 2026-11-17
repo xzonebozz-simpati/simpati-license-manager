@@ -203,7 +203,10 @@ def get_package_detail(db: Session, package_id: UUID) -> Optional[Dict[str, Any]
             })
 
     # Licenses using this package
-    total_licenses = db.query(License).filter(License.package_id == package_id).count()
+    total_licenses = db.query(License).filter(
+        License.package_id == package_id,
+        License.deleted_at.is_(None),
+    ).count()
 
     raw_desc, config = _parse_description_and_config(package.description or "")
 

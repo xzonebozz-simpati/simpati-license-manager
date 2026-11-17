@@ -12,7 +12,11 @@ from cryptography.hazmat.primitives.asymmetric import ed25519
 from app.models.license import License, LicenseInstallation
 from app.models.installation import Installation
 from app.models.operations import LicenseValidation
-from app.services.license_service import compute_license_status, get_or_load_root_signing_keys
+from app.services.license_service import (
+    compute_license_status,
+    get_or_load_root_signing_keys,
+    has_license_revocation,
+)
 from app.security.crypto import generate_secure_token
 from app.services.audit_service import log_audit_event
 
@@ -50,7 +54,10 @@ def validate_installation_license(
     validation_token = f"val_{secrets.token_urlsafe(32)}"
 
     # 1. License Lookup
-    license_obj = db.query(License).filter(License.license_key == license_key).first()
+    license_obj = db.query(License).filter(
+        License.license_key == license_key,
+        License.deleted_at.is_(None),
+    ).first()
     if not license_obj:
         rej_payload = {
             "license_key": license_key,
@@ -181,7 +188,7 @@ def validate_installation_license(
         }
 
     # 4. Compute Status & Restricted Mode
-    status = compute_license_status(license_obj)
+    status = "REVOKED" if has_license_revocation(db, license_obj.id) else compute_license_status(license_obj)
     # Daftar-putih: selain ACTIVE/GRACE_PERIOD selalu terbatas (sebelumnya DRAFT,
     # PENDING_ACTIVATION, dan TERMINATED lolos sebagai tidak terbatas).
     is_restricted = status not in OPERATIONAL_STATUSES
@@ -322,12 +329,17 @@ def activate_client_license(
         raise ValueError("License Key tidak boleh kosong.")
 
     # 1. Cari Lisensi
-    lic = db.query(License).filter(License.license_key == key_clean).first()
+    lic = db.query(License).filter(
+        License.license_key == key_clean,
+        License.deleted_at.is_(None),
+    ).with_for_update().first()
     if not lic:
         raise ValueError(
             f"License Key '{key_clean}' tidak ditemukan dalam sistem pusat. "
             "Pastikan License Key yang dimasukkan benar dan telah diterbitkan oleh administrator."
         )
+    if has_license_revocation(db, lic.id):
+        raise ValueError("Lisensi ini telah dicabut secara permanen.")
 
     # 2. Periksa Organisasi Pelanggan
     customer = db.query(Customer).filter(Customer.id == lic.customer_id).first()
@@ -340,6 +352,9 @@ def activate_client_license(
         raise ValueError(f"Lisensi ini berstatus '{lic.status}' dan telah dicabut. Tidak dapat diaktifkan.")
     if lic.status == "SUSPENDED":
         raise ValueError("Lisensi ini sedang ditangguhkan (SUSPENDED). Hubungi administrator SIMPATI.")
+
+    if compute_license_status(lic) != "ACTIVE":
+        raise ValueError("Lisensi belum berlaku atau tidak lagi berstatus aktif.")
 
     v_until = ensure_utc(lic.valid_until)
     if v_until and v_until < now:

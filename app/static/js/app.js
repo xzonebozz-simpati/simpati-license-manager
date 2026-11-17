@@ -29,6 +29,70 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    window.viewDashboardLicenseDetail = async function(licenseId) {
+        const modal = document.getElementById('modalDashboardLicenseDetail');
+        if (!modal) return;
+        const fields = [
+            'dashboardDetailKey', 'dashboardDetailStatus', 'dashboardDetailCustomer',
+            'dashboardDetailPackage', 'dashboardDetailValidity', 'dashboardDetailType',
+            'dashboardDetailSignature', 'dashboardDetailMaxInstallations'
+        ];
+        fields.forEach(id => {
+            const element = document.getElementById(id);
+            if (element) element.textContent = 'Memuat...';
+        });
+        window.openModal('modalDashboardLicenseDetail');
+
+        try {
+            const response = await fetch(`/api/v1/licenses/${licenseId}/detail`, {
+                headers: { 'X-CSRF-Token': window.getCsrfToken() },
+                credentials: 'same-origin'
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.detail || 'Gagal memuat detail lisensi.');
+            }
+
+            document.getElementById('dashboardDetailKey').textContent = data.license_key;
+            const statusElement = document.getElementById('dashboardDetailStatus');
+            statusElement.textContent = data.computed_status;
+            statusElement.className = `badge ${data.computed_status === 'ACTIVE' ? 'badge-active' : (data.computed_status === 'GRACE_PERIOD' ? 'badge-grace' : 'badge-restricted')}`;
+            document.getElementById('dashboardDetailCustomer').textContent = `${data.customer_name} (${data.customer_code})`;
+            document.getElementById('dashboardDetailPackage').textContent = data.package_name;
+            document.getElementById('dashboardDetailValidity').textContent =
+                `${new Date(data.valid_from).toLocaleDateString('id-ID')} s.d. ${new Date(data.valid_until).toLocaleDateString('id-ID')}`;
+            document.getElementById('dashboardDetailType').textContent = `${data.license_type} / ${data.grace_period_days} hari`;
+            document.getElementById('dashboardDetailSignature').textContent = data.signature_valid ? 'Ed25519 valid' : 'Tanda tangan tidak valid';
+            document.getElementById('dashboardDetailMaxInstallations').textContent = `${data.max_installations} server`;
+
+            const modules = document.getElementById('dashboardDetailModules');
+            modules.replaceChildren();
+            (data.modules || []).forEach(module => {
+                const badge = document.createElement('span');
+                badge.className = 'badge badge-gold';
+                badge.textContent = module;
+                modules.appendChild(badge);
+            });
+
+            const installations = document.getElementById('dashboardDetailInstallations');
+            installations.replaceChildren();
+            if (data.installations && data.installations.length) {
+                data.installations.forEach(installation => {
+                    const item = document.createElement('li');
+                    item.textContent = `${installation.name} (${installation.installation_code}) — ${installation.status}`;
+                    installations.appendChild(item);
+                });
+            } else {
+                const item = document.createElement('li');
+                item.textContent = 'Belum ada instalasi terhubung.';
+                installations.appendChild(item);
+            }
+        } catch (error) {
+            alert(`Kesalahan saat memuat detail lisensi: ${error.message}`);
+            window.closeModal('modalDashboardLicenseDetail');
+        }
+    };
+
     // Close modal on click outside container
     document.querySelectorAll('.modal-overlay').forEach(overlay => {
         overlay.addEventListener('click', (e) => {
@@ -972,6 +1036,42 @@ document.addEventListener('DOMContentLoaded', () => {
             alert('Kesalahan saat memuat detail lisensi: ' + err.message);
         }
     };
+
+    let pendingDeleteLicenseId = null;
+    window.confirmDeleteLicense = function(licenseId, licenseKey) {
+        pendingDeleteLicenseId = licenseId;
+        document.getElementById('delLicenseKey').textContent = licenseKey;
+        window.openModal('modalDeleteLicense');
+    };
+
+    const btnExecuteDeleteLicense = document.getElementById('btnExecuteDeleteLicense');
+    if (btnExecuteDeleteLicense) {
+        btnExecuteDeleteLicense.addEventListener('click', async () => {
+            if (!pendingDeleteLicenseId) return;
+            btnExecuteDeleteLicense.disabled = true;
+            btnExecuteDeleteLicense.textContent = 'Menghapus...';
+            try {
+                const response = await fetch(`/api/v1/licenses/${pendingDeleteLicenseId}`, {
+                    method: 'DELETE',
+                    headers: { 'X-CSRF-Token': window.getCsrfToken() },
+                    credentials: 'same-origin'
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Gagal menghapus lisensi.');
+                }
+                alert(data.message || 'Lisensi berhasil dihapus.');
+                window.location.reload();
+            } catch (error) {
+                alert(`Gagal menghapus lisensi: ${error.message}`);
+            } finally {
+                btnExecuteDeleteLicense.disabled = false;
+                btnExecuteDeleteLicense.textContent = 'Ya, Hapus Lisensi';
+                pendingDeleteLicenseId = null;
+                window.closeModal('modalDeleteLicense');
+            }
+        });
+    }
 
     // Open Extend License Modal
     window.openExtendLicenseModal = function(licenseId, licenseKey, currentUntilDate) {

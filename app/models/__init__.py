@@ -8,7 +8,7 @@ from app.models.catalog import LicensePackage, ModuleRegistry, ModuleDependency,
 from app.models.license import License, LicenseInstallation, LicenseModule, LicenseCapacity
 from app.models.region import Region, LicenseRegion, LicenseOrganizationalLevel
 from app.models.security import SigningKey, RevocationRecord, ApiSecurityLog
-from app.models.operations import LicenseValidation, LicenseHistory, LicenseAuditLog, SystemSetting
+from app.models.operations import LicenseValidation, ValidationNonce, LicenseHistory, LicenseAuditLog, SystemSetting
 
 __all__ = [
     "Base",
@@ -44,6 +44,7 @@ __all__ = [
     "ApiSecurityLog",
     # Operations & Auditing
     "LicenseValidation",
+    "ValidationNonce",
     "LicenseHistory",
     "LicenseAuditLog",
     "SystemSetting",

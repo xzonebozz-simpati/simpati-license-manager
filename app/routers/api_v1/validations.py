@@ -1,14 +1,16 @@
 """Periodic license validation endpoints called by SIMPATI instances."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, Request, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from app.database.session import get_db
 from app.models.installation import Installation
 from app.models.license import License, LicenseInstallation
 from app.models.user import LicenseUser
+from app.models.operations import ValidationNonce
 from app.schemas.license import LicenseValidationRequest, LicenseActivationRequest, LicenseActivationResponse
-from app.security.dependencies import require_installation_auth, require_authenticated_user
+from app.security.dependencies import require_installation_auth, require_superadmin
 from app.services.validation_service import (
     validate_installation_license,
     activate_client_license,
@@ -48,11 +50,6 @@ def activate_license_endpoint(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(ve),
         )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Terjadi kesalahan saat mengaktifkan lisensi: {str(e)}",
-        )
 
 
 @router.post("/verify", summary="Verify Installation License Online")
@@ -74,6 +71,27 @@ def verify_license(
             detail=f"Kode instalasi '{payload.installation_code}' tidak cocok dengan identitas kredensial terotentikasi."
         )
 
+    now = datetime.now(timezone.utc)
+    if not payload.nonce:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nonce wajib disertakan.")
+    if not payload.timestamp or payload.timestamp.tzinfo is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Timestamp bertimezone wajib disertakan untuk validasi lisensi.",
+        )
+    if abs((now - payload.timestamp.astimezone(timezone.utc)).total_seconds()) > 300:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Timestamp validasi sudah kedaluwarsa.")
+
+    db.query(ValidationNonce).filter(
+        ValidationNonce.created_at < now - timedelta(minutes=10)
+    ).delete(synchronize_session=False)
+    db.add(ValidationNonce(nonce=payload.nonce, installation_id=auth_installation.id))
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Nonce validasi telah digunakan.")
+
     client_ip = request.client.host if request.client else "127.0.0.1"
     result = validate_installation_license(
         db=db,
@@ -90,7 +108,7 @@ def preview_license_validation(
     payload: LicenseValidationRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: LicenseUser = Depends(require_authenticated_user)
+    current_user: LicenseUser = Depends(require_superadmin)
 ):
     """Endpoint khusus dashboard superadmin untuk menguji validasi lisensi tanpa M2M credentials.
 
@@ -100,7 +118,10 @@ def preview_license_validation(
     client_ip = request.client.host if request.client else "127.0.0.1"
 
     inst_code = payload.installation_code
-    license_obj = db.query(License).filter(License.license_key == payload.license_key).first()
+    license_obj = db.query(License).filter(
+        License.license_key == payload.license_key,
+        License.deleted_at.is_(None),
+    ).first()
 
     if license_obj:
         # Cek apakah lisensi sudah terikat ke instalasi
@@ -110,27 +131,6 @@ def preview_license_validation(
             bound_codes = [l.installation.installation_code for l in active_links]
             if not inst_code or inst_code not in bound_codes:
                 inst_code = bound_codes[0]
-        else:
-            # Lisensi belum memiliki ikatan instalasi. Cari instalasi yang relevan untuk diikatkan
-            target_inst = None
-            if inst_code:
-                target_inst = db.query(Installation).filter(Installation.installation_code == inst_code).first()
-            if not target_inst and license_obj.customer_id:
-                target_inst = db.query(Installation).filter(Installation.customer_id == license_obj.customer_id).first()
-            if not target_inst:
-                target_inst = db.query(Installation).first()
-
-            if target_inst:
-                new_bind = LicenseInstallation(
-                    license_id=license_obj.id,
-                    installation_id=target_inst.id,
-                    is_active=True,
-                    activated_at=datetime.now(timezone.utc)
-                )
-                db.add(new_bind)
-                db.commit()
-                inst_code = target_inst.installation_code
-
     result = validate_installation_license(
         db=db,
         license_key=payload.license_key,

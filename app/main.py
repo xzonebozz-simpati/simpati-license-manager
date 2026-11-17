@@ -49,7 +49,8 @@ async def lifespan(app: FastAPI):
         logger.info("Skema database terverifikasi.")
         seed_initial_data()
     except Exception as exc:
-        logger.warning(f"Koneksi DB saat startup: {exc}")
+        logger.exception("Startup gagal saat menyiapkan database atau data awal.")
+        raise RuntimeError("License Manager tidak dapat dimulai tanpa database siap.") from exc
 
     yield
 

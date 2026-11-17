@@ -329,6 +329,103 @@ def test_license_status_lifecycle_and_crl_revocation(client: TestClient, db_sess
     assert crl_record is not None
     assert "Pemutusan perjanjian" in crl_record.reason
 
+    reactivate_revoked = client.patch(
+        f"/api/v1/licenses/{lic_id}/status",
+        json={"status": "ACTIVE", "reason": "Pengaktifan ulang yang tidak sah"},
+        headers={"X-CSRF-Token": auth_headers["X-CSRF-Token"], "Cookie": auth_headers["cookie"]}
+    )
+    assert reactivate_revoked.status_code == 400
+    assert "tidak dapat diaktifkan kembali" in reactivate_revoked.json()["detail"]
+    revoked_license = db_session.query(License).filter(License.id == UUID(lic_id)).first()
+    revoked_license.status = "ACTIVE"
+    db_session.commit()
+    crl_reactivation = client.patch(
+        f"/api/v1/licenses/{lic_id}/status",
+        json={"status": "SUSPENDED", "reason": "Percobaan mengubah lisensi pada CRL"},
+        headers={"X-CSRF-Token": auth_headers["X-CSRF-Token"], "Cookie": auth_headers["cookie"]}
+    )
+    assert crl_reactivation.status_code == 400
+    assert "telah dicabut" in crl_reactivation.json()["detail"]
+
+    validity_update = client.patch(
+        f"/api/v1/licenses/{lic_id}/validity",
+        json={
+            "valid_from": (now - timedelta(days=1)).isoformat(),
+            "valid_until": (now + timedelta(days=730)).isoformat(),
+            "reason": "Percobaan mengubah masa berlaku lisensi CRL",
+        },
+        headers={"X-CSRF-Token": auth_headers["X-CSRF-Token"], "Cookie": auth_headers["cookie"]},
+    )
+    assert validity_update.status_code == 400
+    assert "telah dicabut" in validity_update.json()["detail"]
+
+    extension = client.post(
+        f"/api/v1/licenses/{lic_id}/extend",
+        json={
+            "valid_until": (now + timedelta(days=730)).isoformat(),
+            "reason": "Percobaan memperpanjang lisensi CRL",
+        },
+        headers={"X-CSRF-Token": auth_headers["X-CSRF-Token"], "Cookie": auth_headers["cookie"]},
+    )
+    assert extension.status_code == 400
+    assert "telah dicabut" in extension.json()["detail"]
+
+
+def test_delete_license_hides_it_but_retains_record(client, db_session, auth_headers, sample_customer_and_inst):
+    cust, _ = sample_customer_and_inst
+    pkg = db_session.query(LicensePackage).first()
+    now = datetime.now(timezone.utc)
+    create_resp = client.post(
+        "/api/v1/licenses",
+        json={
+            "customer_id": str(cust.id),
+            "package_id": str(pkg.id),
+            "valid_from": now.isoformat(),
+            "valid_until": (now + timedelta(days=365)).isoformat(),
+            "modules": ["CORE"],
+        },
+        headers={"X-CSRF-Token": auth_headers["X-CSRF-Token"], "Cookie": auth_headers["cookie"]}
+    )
+    assert create_resp.status_code == 201
+    license_id = create_resp.json()["license_id"]
+
+    deleted = client.delete(
+        f"/api/v1/licenses/{license_id}",
+        headers={"X-CSRF-Token": auth_headers["X-CSRF-Token"], "Cookie": auth_headers["cookie"]}
+    )
+    assert deleted.status_code == 200
+    assert client.get(
+        f"/api/v1/licenses/{license_id}/detail",
+        headers={"Cookie": auth_headers["cookie"]}
+    ).status_code == 404
+    assert all(item["id"] != license_id for item in client.get(
+        "/api/v1/licenses",
+        headers={"Cookie": auth_headers["cookie"]}
+    ).json())
+    stored = db_session.query(License).filter(License.id == UUID(license_id)).first()
+    assert stored is not None
+    assert stored.deleted_at is not None
+    assert stored.status == "REVOKED"
+
+
+def test_non_superadmin_cannot_access_license_management(client, db_session):
+    operator = LicenseUser(
+        username=f"operator-{uuid4().hex[:8]}",
+        email=f"operator-{uuid4().hex[:8]}@simpati.test",
+        full_name="Test Operator",
+        password_hash=hash_password("OperatorSecret@2026!"),
+        role="OPERATOR",
+        is_active=True,
+    )
+    db_session.add(operator)
+    db_session.commit()
+    _, token, _ = authenticate_user(db_session, operator.username, "OperatorSecret@2026!")
+    response = client.get(
+        "/api/v1/licenses",
+        headers={"Cookie": f"simpati_session={token}"},
+    )
+    assert response.status_code == 403
+
 
 def test_snapshot_immutability_on_package_change(client: TestClient, db_session, auth_headers, sample_customer_and_inst):
     """

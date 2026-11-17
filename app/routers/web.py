@@ -186,7 +186,9 @@ def view_dashboard(
     """Renders main dashboard overview with KPI statistics and recent licenses."""
     customers = db.query(Customer).all()
     installations = db.query(Installation).all()
-    licenses = db.query(License).order_by(License.created_at.desc()).limit(10).all()
+    licenses = db.query(License).filter(
+        License.deleted_at.is_(None),
+    ).order_by(License.created_at.desc()).limit(10).all()
     packages = db.query(LicensePackage).all()
     validations = db.query(LicenseValidation).all()
     recent_audits = db.query(LicenseAuditLog).order_by(LicenseAuditLog.created_at.desc()).limit(5).all()
@@ -312,7 +314,9 @@ def view_licenses(
     current_user: LicenseUser = Depends(require_web_user)
 ):
     """Renders commercial licenses list."""
-    licenses = db.query(License).order_by(License.created_at.desc()).all()
+    licenses = db.query(License).filter(
+        License.deleted_at.is_(None),
+    ).order_by(License.created_at.desc()).all()
     customers = db.query(Customer).order_by(Customer.organization_name.asc()).all()
     packages = db.query(LicensePackage).filter(LicensePackage.is_active == True).order_by(LicensePackage.package_name.asc()).all()
     installations = db.query(Installation).order_by(Installation.name.asc()).all()

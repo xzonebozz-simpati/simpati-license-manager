@@ -34,10 +34,10 @@ def ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
 
 
 def generate_license_key() -> str:
-    """Generates an official formatted SIMPATI license key: SMP-LIC-{YEAR}-{PART1}-{PART2}."""
+    """Generates a license key with 128 bits of cryptographic entropy."""
     current_year = datetime.now().year
-    part1 = secrets.token_hex(2).upper()
-    part2 = secrets.token_hex(2).upper()
+    part1 = secrets.token_hex(8).upper()
+    part2 = secrets.token_hex(8).upper()
     return f"SMP-LIC-{current_year}-{part1}-{part2}"
 
 
@@ -52,56 +52,61 @@ def get_or_load_root_signing_keys() -> Tuple[str, str]:
     Returns: (private_key_pem, public_key_pem)
     """
     # 1. Environment Variable / Cloud Secret Storage (Recommended for Hostless)
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
+    def normalize_pem(value: str) -> str:
+        value = value.strip()
+        return value.replace("\\n", "\n") if "\\n" in value and "\n" not in value else value
+
+    def validate_key_pair(private_pem: str, public_pem: Optional[str] = None) -> Tuple[str, str]:
+        private_key = serialization.load_pem_private_key(private_pem.encode("utf-8"), password=None)
+        if not isinstance(private_key, ed25519.Ed25519PrivateKey):
+            raise ValueError("Root signing key must be Ed25519.")
+        derived_public = private_key.public_key()
+        derived_pem = derived_public.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        ).decode("utf-8").strip()
+        if public_pem:
+            supplied_public = serialization.load_pem_public_key(public_pem.encode("utf-8"))
+            if not isinstance(supplied_public, ed25519.Ed25519PublicKey):
+                raise ValueError("Root public key must be Ed25519.")
+            if supplied_public.public_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PublicFormat.Raw,
+            ) != derived_public.public_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PublicFormat.Raw,
+            ):
+                raise ValueError("Root Ed25519 private and public keys do not match.")
+            return private_pem, public_pem
+        return private_pem, derived_pem
+
     if settings.ED25519_PRIVATE_KEY_PEM:
-        try:
-            priv_pem = settings.ED25519_PRIVATE_KEY_PEM.strip()
-            # Normalize escaped newlines from environment strings
-            if "\\n" in priv_pem and "\n" not in priv_pem:
-                priv_pem = priv_pem.replace("\\n", "\n")
-
-            if settings.ED25519_PUBLIC_KEY_PEM:
-                pub_pem = settings.ED25519_PUBLIC_KEY_PEM.strip()
-                if "\\n" in pub_pem and "\n" not in pub_pem:
-                    pub_pem = pub_pem.replace("\\n", "\n")
-                return priv_pem, pub_pem
-
-            # Derive public key directly from private key PEM
-            from cryptography.hazmat.primitives import serialization
-            priv_obj = serialization.load_pem_private_key(priv_pem.encode("utf-8"), password=None)
-            pub_obj = priv_obj.public_key()
-            pub_pem = pub_obj.public_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PublicFormat.SubjectPublicKeyInfo
-            ).decode("utf-8").strip()
-            return priv_pem, pub_pem
-        except Exception as exc:
-            import logging
-            logging.getLogger("simpati.license_service").error(f"Gagal memuat Ed25519 key dari environment: {exc}")
+        return validate_key_pair(
+            normalize_pem(settings.ED25519_PRIVATE_KEY_PEM),
+            normalize_pem(settings.ED25519_PUBLIC_KEY_PEM) if settings.ED25519_PUBLIC_KEY_PEM else None,
+        )
 
     # 2. Local File Vault Storage
     vault_path = Path(settings.SIGNING_KEY_VAULT_PATH)
     pub_path = vault_path.with_suffix(".pub")
 
     if vault_path.exists() and pub_path.exists():
-        try:
-            priv_pem = vault_path.read_text(encoding="utf-8").strip()
-            pub_pem = pub_path.read_text(encoding="utf-8").strip()
-            return priv_pem, pub_pem
-        except Exception:
-            pass
+        priv_pem = vault_path.read_text(encoding="utf-8").strip()
+        pub_pem = pub_path.read_text(encoding="utf-8").strip()
+        return validate_key_pair(priv_pem, pub_pem)
+
+    if settings.is_production:
+        raise RuntimeError("Ed25519 signing keys must be configured before production startup.")
 
     # 3. Fallback: Generate and persist new keys if absent (development only)
-    try:
-        vault_path.parent.mkdir(parents=True, exist_ok=True)
-    except Exception:
-        pass
+    vault_path.parent.mkdir(parents=True, exist_ok=True)
 
     priv_pem, pub_pem = generate_ed25519_keypair()
-    try:
-        vault_path.write_text(priv_pem, encoding="utf-8")
-        pub_path.write_text(pub_pem, encoding="utf-8")
-    except Exception:
-        pass
+    vault_path.write_text(priv_pem, encoding="utf-8")
+    pub_path.write_text(pub_pem, encoding="utf-8")
     return priv_pem, pub_pem
 
 
@@ -145,6 +150,14 @@ def compute_license_status(license_obj: License) -> str:
     return "RESTRICTED"
 
 
+def has_license_revocation(db: Session, license_id: UUID) -> bool:
+    """Checks the permanent revocation ledger independently of the mutable status field."""
+    return db.query(RevocationRecord).filter(
+        RevocationRecord.entity_type == "LICENSE",
+        RevocationRecord.entity_id == license_id,
+    ).first() is not None
+
+
 # ---------------------------------------------------------------------------
 # License Issuance & Snapshot Signing
 # ---------------------------------------------------------------------------
@@ -161,10 +174,14 @@ def issue_license(
     customer = db.query(Customer).filter(Customer.id == data.customer_id).first()
     if not customer:
         raise ValueError(f"Pelanggan dengan ID {data.customer_id} tidak ditemukan.")
+    if customer.status != "ACTIVE":
+        raise ValueError("Lisensi tidak dapat diterbitkan untuk pelanggan yang tidak aktif.")
 
     package = db.query(LicensePackage).filter(LicensePackage.id == data.package_id).first()
     if not package:
         raise ValueError(f"Paket lisensi dengan ID {data.package_id} tidak ditemukan.")
+    if not package.is_active:
+        raise ValueError("Lisensi tidak dapat diterbitkan menggunakan paket yang tidak aktif.")
 
     # Validate installation if supplied
     installation = None
@@ -304,9 +321,13 @@ def extend_license(
     user_id: Optional[UUID] = None
 ) -> License:
     """Extends the expiration date of a license and signs the updated snapshot."""
-    license_obj = db.query(License).filter(License.id == license_id).first()
+    license_obj = db.query(License).filter(License.id == license_id, License.deleted_at.is_(None)).first()
     if not license_obj:
         raise ValueError("Lisensi tidak ditemukan.")
+    if has_license_revocation(db, license_obj.id):
+        raise ValueError("Lisensi yang telah dicabut tidak dapat diperpanjang.")
+    if license_obj.status in ("REVOKED", "TERMINATED"):
+        raise ValueError(f"Lisensi berstatus {license_obj.status} dan tidak dapat diperpanjang.")
 
     old_until = ensure_utc(license_obj.valid_until)
     new_until = ensure_utc(data.valid_until)
@@ -324,8 +345,6 @@ def extend_license(
     # dianggap tidak aktif oleh CORE. SUSPENDED/REVOKED/TERMINATED adalah keputusan
     # administratif dan hanya dipulihkan lewat perubahan status eksplisit.
     if license_obj.status in ("EXPIRED", "RESTRICTED", "PENDING_ACTIVATION"):
-        license_obj.status = "ACTIVE"
-    elif license_obj.status == "SUSPENDED" and "perpanjang" in (data.reason or "").lower():
         license_obj.status = "ACTIVE"
 
     # Update snapshot
@@ -392,10 +411,12 @@ def update_license_validity(
     pada lisensi yang sudah diterbitkan. Berbeda dengan extend_license(), tanggal baru
     boleh lebih awal maupun lebih akhir dari tanggal lama. Snapshot ditandatangani ulang.
     """
-    license_obj = db.query(License).filter(License.id == license_id).first()
+    license_obj = db.query(License).filter(License.id == license_id, License.deleted_at.is_(None)).first()
     if not license_obj:
         raise ValueError("Lisensi tidak ditemukan.")
 
+    if has_license_revocation(db, license_obj.id):
+        raise ValueError("Lisensi yang telah dicabut secara permanen tidak dapat diubah masa berlakunya.")
     if license_obj.status in ("REVOKED", "TERMINATED"):
         raise ValueError(
             f"Lisensi berstatus {license_obj.status} dan tidak dapat diubah masa berlakunya."
@@ -504,7 +525,7 @@ def update_license_status(
     user_id: Optional[UUID] = None
 ) -> License:
     """Updates license operational status (ACTIVE / SUSPENDED / REVOKED) with audit trail."""
-    license_obj = db.query(License).filter(License.id == license_id).first()
+    license_obj = db.query(License).filter(License.id == license_id, License.deleted_at.is_(None)).first()
     if not license_obj:
         raise ValueError("Lisensi tidak ditemukan.")
 
@@ -513,10 +534,16 @@ def update_license_status(
         raise ValueError(f"Status tidak valid: {data.status}. Pilih: {allowed}")
 
     old_status = license_obj.status
+    if has_license_revocation(db, license_obj.id):
+        raise ValueError("Lisensi yang telah dicabut tidak dapat diaktifkan kembali atau diubah kembali.")
+    if old_status in ("REVOKED", "TERMINATED") and data.status != old_status:
+        raise ValueError(f"Lisensi berstatus {old_status} tidak dapat diaktifkan kembali.")
+    if old_status == data.status:
+        raise ValueError(f"Lisensi sudah berstatus {data.status}.")
     license_obj.status = data.status
 
     # If Revoked, record in RevocationRecord table (CRL)
-    if data.status == "REVOKED":
+    if data.status == "REVOKED" and old_status != "REVOKED":
         revocation = RevocationRecord(
             entity_type="LICENSE",
             entity_id=license_obj.id,
@@ -556,7 +583,7 @@ def update_license_status(
 
 def get_license_detail(db: Session, license_id: UUID) -> Optional[Dict[str, Any]]:
     """Assembles full license profile, relations, and verifies digital signature."""
-    lic = db.query(License).filter(License.id == license_id).first()
+    lic = db.query(License).filter(License.id == license_id, License.deleted_at.is_(None)).first()
     if not lic:
         return None
 
@@ -650,9 +677,14 @@ def bind_installation_to_license(
     user_id: Optional[UUID] = None
 ) -> LicenseInstallation:
     """Binds an installation to an existing commercial license if quota permits."""
-    lic = db.query(License).filter(License.id == license_id).first()
+    lic = db.query(License).filter(
+        License.id == license_id,
+        License.deleted_at.is_(None),
+    ).with_for_update().first()
     if not lic:
         raise ValueError("Lisensi tidak ditemukan.")
+    if has_license_revocation(db, lic.id):
+        raise ValueError("Lisensi yang telah dicabut tidak dapat dihubungkan ke instalasi.")
 
     inst = db.query(Installation).filter(Installation.id == installation_id).first()
     if not inst:
@@ -660,16 +692,10 @@ def bind_installation_to_license(
 
     if inst.customer_id != lic.customer_id:
         raise ValueError("Instalasi bukan milik organisasi pelanggan pemegang lisensi ini.")
-
-    active_count = db.query(LicenseInstallation).filter(
-        LicenseInstallation.license_id == license_id,
-        LicenseInstallation.is_active == True
-    ).count()
-
-    if active_count >= lic.max_installations:
-        raise ValueError(
-            f"Batas maksimum instalasi ({lic.max_installations}) untuk lisensi ini telah tercapai."
-        )
+    if inst.status != "ACTIVE":
+        raise ValueError("Instalasi harus berstatus ACTIVE sebelum dihubungkan ke lisensi.")
+    if compute_license_status(lic) != "ACTIVE":
+        raise ValueError("Lisensi harus berstatus operasional ACTIVE sebelum dihubungkan.")
 
     # Check if already linked
     existing = db.query(LicenseInstallation).filter(
@@ -677,9 +703,27 @@ def bind_installation_to_license(
         LicenseInstallation.installation_id == installation_id
     ).first()
     if existing:
+        if existing.is_active:
+            return existing
+        active_count = db.query(LicenseInstallation).filter(
+            LicenseInstallation.license_id == license_id,
+            LicenseInstallation.is_active == True
+        ).count()
+        if active_count >= lic.max_installations:
+            raise ValueError(
+                f"Batas maksimum instalasi ({lic.max_installations}) untuk lisensi ini telah tercapai."
+            )
         existing.is_active = True
         link = existing
     else:
+        active_count = db.query(LicenseInstallation).filter(
+            LicenseInstallation.license_id == license_id,
+            LicenseInstallation.is_active == True
+        ).count()
+        if active_count >= lic.max_installations:
+            raise ValueError(
+                f"Batas maksimum instalasi ({lic.max_installations}) untuk lisensi ini telah tercapai."
+            )
         link = LicenseInstallation(
             license_id=license_id,
             installation_id=installation_id,
@@ -699,3 +743,42 @@ def bind_installation_to_license(
     db.commit()
     db.refresh(link)
     return link
+
+
+def soft_delete_license(db: Session, license_id: UUID, user_id: Optional[UUID] = None) -> Optional[License]:
+    """Hides a license from operations without removing its audit and validation history."""
+    license_obj = db.query(License).filter(
+        License.id == license_id,
+        License.deleted_at.is_(None),
+    ).first()
+    if not license_obj:
+        return None
+
+    license_obj.deleted_at = datetime.now(timezone.utc)
+    license_obj.status = "REVOKED"
+    db.add(LicenseHistory(
+        license_id=license_obj.id,
+        action="DELETED",
+        old_values=license_obj.license_key,
+        new_values="DELETED",
+        performed_by_user_id=user_id,
+        remarks="Lisensi dihapus dari daftar operasional (soft-delete).",
+    ))
+    db.add(RevocationRecord(
+        entity_type="LICENSE",
+        entity_id=license_obj.id,
+        revocation_code=f"DEL-LIC-{secrets.token_hex(4).upper()}",
+        reason="Lisensi dihapus dari sistem operasional.",
+        revoked_by_user_id=user_id,
+    ))
+    db.commit()
+    db.refresh(license_obj)
+    log_audit_event(
+        db=db,
+        action_category="LICENSE",
+        action_name="LICENSE_DELETED",
+        user_id=user_id,
+        target_resource=f"license:{license_obj.license_key}",
+        details={"license_id": str(license_obj.id), "deleted_at": license_obj.deleted_at.isoformat()},
+    )
+    return license_obj

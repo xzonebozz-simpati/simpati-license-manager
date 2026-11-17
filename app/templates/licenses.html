@@ -103,6 +103,14 @@
                                 >
                                     🔄 Status
                                 </button>
+                                <button
+                                    onclick="confirmDeleteLicense('{{ lic.id }}', '{{ lic.license_key }}')"
+                                    class="btn btn-secondary btn-sm"
+                                    style="border-color: rgba(239, 68, 68, 0.6); color: #f87171;"
+                                    title="Hapus lisensi (soft-delete, riwayat tetap tersimpan)"
+                                >
+                                    🗑️ Hapus
+                                </button>
                             </div>
                         </td>
                     </tr>
@@ -116,6 +124,23 @@
                 {% endif %}
             </tbody>
         </table>
+    </div>
+</div>
+
+<div id="modalDeleteLicense" class="modal-overlay">
+    <div class="modal-container" style="max-width: 500px; border-color: #ef4444;">
+        <div class="modal-header">
+            <div class="modal-title" style="color:#f87171;">🗑️ Hapus Lisensi</div>
+            <button class="modal-close" onclick="closeModal('modalDeleteLicense')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p>Lisensi <strong id="delLicenseKey" class="font-mono"></strong> akan dikeluarkan dari sistem operasional dan tidak dapat digunakan untuk aktivasi/validasi lagi.</p>
+            <p style="color:var(--text-muted);">Riwayat dan data audit tetap disimpan. Tindakan ini tidak dapat dibatalkan dari dashboard.</p>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('modalDeleteLicense')">Batal</button>
+            <button type="button" id="btnExecuteDeleteLicense" class="btn btn-primary" style="background:#b91c1c;">Ya, Hapus Lisensi</button>
+        </div>
     </div>
 </div>
 

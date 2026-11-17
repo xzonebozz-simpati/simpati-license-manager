@@ -48,6 +48,40 @@ def test_ed25519_keypair_generation_and_signature():
     assert verify_signature(pub_pem, tampered_payload, signature) is False
 
 
+def test_generated_license_key_has_at_least_128_bits_of_entropy():
+    from app.services.license_service import generate_license_key
+
+    parts = generate_license_key().split("-")
+    assert len(parts) == 5
+    assert len(parts[3]) == 16
+    assert len(parts[4]) == 16
+
+
+def test_production_settings_reject_bootstrap_secrets():
+    from pydantic import ValidationError
+    from app.config import Settings
+
+    with pytest.raises(ValidationError):
+        Settings(
+            APP_ENV="production",
+            ADMIN_PASSWORD="SuperAdmin@2026!",
+            SECRET_KEY="simpati-super-secret-key-change-in-production-min-32-chars",
+        )
+
+
+def test_root_signing_keys_reject_mismatched_environment_pair(monkeypatch, tmp_path):
+    from app.services import license_service
+
+    private_pem, _ = license_service.generate_ed25519_keypair()
+    _, different_public_pem = license_service.generate_ed25519_keypair()
+    monkeypatch.setattr(license_service.settings, "ED25519_PRIVATE_KEY_PEM", private_pem)
+    monkeypatch.setattr(license_service.settings, "ED25519_PUBLIC_KEY_PEM", different_public_pem)
+    monkeypatch.setattr(license_service.settings, "SIGNING_KEY_VAULT_PATH", str(tmp_path / "root.key"))
+
+    with pytest.raises(ValueError, match="do not match"):
+        license_service.get_or_load_root_signing_keys()
+
+
 def test_token_generation_and_hashing():
     """Verifies cryptographic token generator and SHA-256 hash lookup."""
     token1 = generate_secure_token(32)

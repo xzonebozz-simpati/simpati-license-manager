@@ -40,6 +40,25 @@ class LicenseValidation(Base, UUIDMixin):
     installation: Mapped["Installation"] = relationship("Installation", back_populates="validations")
 
 
+class ValidationNonce(Base, UUIDMixin):
+    """Short-lived record preventing replay of authenticated validation requests."""
+    __tablename__ = "validation_nonces"
+
+    nonce: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    installation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("installations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        server_default=func.now(),
+        nullable=False,
+        index=True,
+    )
+
+
 class LicenseHistory(Base, UUIDMixin):
     """Complete audit trail of state and lifecycle transitions for each license."""
     __tablename__ = "license_history"

@@ -120,7 +120,7 @@
                                     onclick="confirmDeleteInstallation('{{ inst.id }}', '{{ inst.name | e }}')" 
                                     class="btn btn-secondary btn-sm" 
                                     style="border-color: rgba(239, 68, 68, 0.6); color: #f87171;" 
-                                    title="Hapus Instalasi (Cek Relasi Lisensi)"
+                                    title="Hapus instalasi dan lepaskan semua ikatan lisensi"
                                 >
                                     🗑️
                                 </button>
@@ -492,6 +492,7 @@
         <div class="modal-body">
             <p style="font-size: 13px; margin-bottom: 12px;">
                 Apakah Anda yakin ingin menghapus server instalasi <strong id="delInstName" style="color: var(--gold-light);">-</strong>?
+                <br><br>Semua kredensial, telemetry, validasi, dan ikatan lisensi instalasi ini akan dihapus. Lisensi komersialnya tetap tersimpan dan dapat dihubungkan kembali.
             </p>
             <div style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 12px; font-size: 12px; color: var(--text-main);">
                 Pemeriksaan relasi: Server instalasi tidak dapat dihapus jika masih terikat dengan lisensi komersial aktif. Seluruh kredensial dan riwayat event akan dihapus bersamaan.

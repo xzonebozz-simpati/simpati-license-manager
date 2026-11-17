@@ -183,6 +183,10 @@ DATABASE_URL=postgresql+psycopg2://postgres:password_anda@localhost:5432/simpati
 *(Catatan: Jika Anda ingin mencoba secara langsung tanpa menyiapkan server PostgreSQL terlebih dahulu, biarkan `DATABASE_URL=sqlite:///./simpati_license.db`).*
 
 ### Langkah 5: Inisialisasi Database & Seeding Data Awal
+Untuk deployment staging/production, isi dahulu seluruh secret dan kunci Ed25519 seperti pada `.env.example`. Jalankan migration skema sebelum inisialisasi:
+```powershell
+alembic upgrade head
+```
 Jalankan script inisialisasi:
 ```powershell
 python scripts/init_db.py
@@ -206,7 +210,9 @@ Buka browser dan akses URL berikut:
 - **Dashboard Web (Tema Maroon & Emas):** [http://localhost:8000/](http://localhost:8000/)
 - **Kredensial Default Superadmin:**
   - **Username:** `superadmin`
-  - **Password:** `SuperAdmin@2026!`
+  - **Password:** gunakan `ADMIN_PASSWORD` yang Anda tetapkan saat inisialisasi. Nilai bootstrap bawaan hanya untuk development; staging/production menolak password default.
+- **Hapus lisensi:** lisensi dihapus secara soft-delete agar riwayat audit tetap ada; lisensi tersebut tidak dapat divalidasi atau diaktifkan kembali.
+- **Hapus instalasi:** kredensial, telemetry, validasi, dan binding instalasi dihapus, sementara lisensi tetap tersimpan dan bisa dihubungkan ke instalasi lain.
 - **Swagger API Documentation:** [http://localhost:8000/docs](http://localhost:8000/docs)
 - **ReDoc API Documentation:** [http://localhost:8000/redoc](http://localhost:8000/redoc)
 - **Health Check Probe:** [http://localhost:8000/healthz](http://localhost:8000/healthz)
