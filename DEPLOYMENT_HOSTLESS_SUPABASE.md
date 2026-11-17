@@ -86,7 +86,7 @@ Permintaan layanan dan perubahan lisensi mencatat `service_id` pada audit log.
 Aplikasi telah dilengkapi file `Procfile` di root direktori:
 
 ```text
-web: python app.py
+web: python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips "*"
 release: python -m alembic upgrade head
 ```
 
@@ -100,11 +100,7 @@ release: python -m alembic upgrade head
   Startup aplikasi juga menerapkan migrasi yang tertunda dan akan gagal jika migrasi atau koneksi database gagal. `Base.metadata.create_all()` tidak digunakan sebagai pengganti migrasi.
 * **Start Command**:
   ```bash
-  python app.py
-  ```
-  atau langsung menggunakan Uvicorn CLI:
-  ```bash
-  uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips "*"
+  python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips "*"
   ```
 
 ---
