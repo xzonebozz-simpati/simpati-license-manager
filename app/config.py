@@ -4,11 +4,53 @@ Loads environment variables, validates configurations, and provides
 centralized application settings for Local, Staging, and Production (Hostless + Supabase).
 """
 
+import logging
 import os
 from functools import lru_cache
 from typing import List, Optional
+
+from dotenv import dotenv_values
 from pydantic import Field, AliasChoices, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_DEFAULT_SECRET_KEY = "simpati-super-secret-key-change-in-production-min-32-chars"
+logger = logging.getLogger(__name__)
+
+
+def _is_secret_key_placeholder(secret_key: str) -> bool:
+    return (
+        secret_key.upper().startswith("CHANGE-ME")
+        or secret_key.startswith("change-this-to-")
+    )
+
+
+def _log_secret_key_diagnostics() -> None:
+    dotenv_values_by_name = {
+        name.upper(): value
+        for name, value in dotenv_values(".env").items()
+        if value is not None
+    }
+    configured_secret_key = os.environ.get(
+        "SECRET_KEY",
+        dotenv_values_by_name.get("SECRET_KEY"),
+    )
+    effective_secret_key = (
+        _DEFAULT_SECRET_KEY
+        if configured_secret_key is None
+        else configured_secret_key
+    )
+    app_env = os.environ.get(
+        "APP_ENV",
+        dotenv_values_by_name.get("APP_ENV", "development"),
+    )
+    logger.warning(
+        "Startup config diagnostic: APP_ENV=%s SECRET_KEY available=%s length=%d placeholder=%s default=%s",
+        app_env,
+        configured_secret_key is not None,
+        len(effective_secret_key),
+        _is_secret_key_placeholder(effective_secret_key),
+        effective_secret_key == _DEFAULT_SECRET_KEY,
+    )
 
 
 class Settings(BaseSettings):
@@ -45,7 +87,7 @@ class Settings(BaseSettings):
 
     # Security & Tokens
     SECRET_KEY: str = Field(
-        default="simpati-super-secret-key-change-in-production-min-32-chars",
+        default=_DEFAULT_SECRET_KEY,
         description="Secret key for JWT sessions and payload integrity"
     )
     ALGORITHM: str = "HS256"
@@ -108,9 +150,8 @@ class Settings(BaseSettings):
             ):
                 raise ValueError("ADMIN_PASSWORD must be a unique value of at least 16 characters in production.")
             if (
-                self.SECRET_KEY == "simpati-super-secret-key-change-in-production-min-32-chars"
-                or self.SECRET_KEY.upper().startswith("CHANGE-ME")
-                or self.SECRET_KEY.startswith("change-this-to-")
+                self.SECRET_KEY == _DEFAULT_SECRET_KEY
+                or _is_secret_key_placeholder(self.SECRET_KEY)
                 or len(self.SECRET_KEY) < 32
             ):
                 raise ValueError("SECRET_KEY must be a unique value of at least 32 characters in production.")
@@ -154,4 +195,5 @@ class Settings(BaseSettings):
 @lru_cache()
 def get_settings() -> Settings:
     """Cached settings singleton."""
+    _log_secret_key_diagnostics()
     return Settings()

@@ -1,5 +1,6 @@
 """Tests for Argon2id hashing, Ed25519 digital signature, and tokens."""
 
+import logging
 import pytest
 from app.security.hashing import hash_password, verify_password, needs_rehash
 from app.security.crypto import (
@@ -67,6 +68,24 @@ def test_production_settings_reject_bootstrap_secrets():
             ADMIN_PASSWORD="SuperAdmin@2026!",
             SECRET_KEY="simpati-super-secret-key-change-in-production-min-32-chars",
         )
+
+
+def test_secret_key_startup_diagnostic_logs_metadata_only(monkeypatch, caplog, tmp_path):
+    from app.config import _log_secret_key_diagnostics
+
+    secret_key = "never-log-this-secret-key-value"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("APP_ENV", "staging")
+    monkeypatch.setenv("SECRET_KEY", secret_key)
+
+    with caplog.at_level(logging.WARNING):
+        _log_secret_key_diagnostics()
+
+    assert secret_key not in caplog.text
+    assert "APP_ENV=staging" in caplog.text
+    assert "SECRET_KEY available=True" in caplog.text
+    assert "length=31" in caplog.text
+    assert "placeholder=False default=False" in caplog.text
 
 
 def test_root_signing_keys_reject_mismatched_environment_pair(monkeypatch, tmp_path):
