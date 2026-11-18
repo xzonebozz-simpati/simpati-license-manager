@@ -89,11 +89,7 @@ release: python -m alembic upgrade head
   *Jika Hostless tidak memiliki fitur release phase, perintah migrasi dapat dijalankan sekali melalui Hostless Web Console / SSH, atau sistem akan otomatis memvalidasi skema melalui lifespan startup `Base.metadata.create_all()`.*
 * **Start Command**:
   ```bash
-  python app.py
-  ```
-  atau langsung menggunakan Uvicorn CLI:
-  ```bash
-  uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips "*"
+  python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips "*"
   ```
 
 ---
