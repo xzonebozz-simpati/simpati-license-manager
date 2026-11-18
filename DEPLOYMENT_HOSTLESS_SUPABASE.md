@@ -60,8 +60,8 @@ Pada dashboard proyek Hostless, masuk ke menu **Environment Variables / Secrets*
 | `SECRET_KEY` | *(acak 64 karakter hex)* | Kunci JWT session & CSRF (`python -c "import secrets; print(secrets.token_hex(32))"`) |
 | `DATABASE_URL` | `postgresql://postgres:[PASS]@db...:5432/postgres?sslmode=require` | Connection string PostgreSQL Supabase |
 | `ED25519_PRIVATE_KEY_PEM` | `"-----BEGIN PRIVATE KEY-----\nMC4CAQAwB...-----END PRIVATE KEY-----"` | Private key untuk tanda tangan digital lisensi |
-| `UNIVERSAL_API_SERVICE_ID` | `simpati-universal-api` | ID layanan untuk autentikasi server-to-server; opsional jika integrasi tidak digunakan |
-| `UNIVERSAL_API_SERVICE_SECRET` | *(secret acak minimal 32 byte)* | Secret HTTP Basic layanan; simpan sebagai secret dan gunakan hanya melalui HTTPS |
+| `UNIVERSAL_API_SERVICE_ID` | `simpati-universal-api` | ID layanan untuk autentikasi server-to-server; wajib jika Universal API/pemanggil lain mengakses endpoint API berautentikasi layanan |
+| `UNIVERSAL_API_SERVICE_SECRET` | *(secret acak minimal 32 byte)* | Secret HTTP Basic layanan; wajib dipasangkan dengan ID di atas, simpan sebagai secret, dan gunakan hanya melalui HTTPS |
 | `UNIVERSAL_API_SERVICE_PREVIOUS_SECRET` | *(kosong, kecuali selama rotasi)* | Secret lama sementara agar rotasi tidak memutus integrasi |
 | `ADMIN_USERNAME` | `superadmin` | Username Superadmin awal |
 | `ADMIN_PASSWORD` | *(password kuat)* | Password Superadmin awal |
@@ -76,6 +76,13 @@ development dan pengujian.
 
 Identitas Universal API bukan akun pengguna. Aksesnya terbatas pada operasi
 daftar pelanggan, katalog paket/modul, dan pembuatan/pembacaan/perubahan lisensi.
+Jika penerbitan lisensi dilakukan melalui integrasi server-to-server, kedua
+variabel kredensial di atas harus diisi pada deployment License Manager dan
+pasangan ID/secret yang sama harus dikonfigurasi pada pemanggil. Tanpa konfigurasi
+ini, request berautentikasi HTTP Basic ditolak sebelum License Manager memeriksa
+pelanggan atau payload lisensi; status pelanggan yang sudah terdaftar tidak
+mengubah hasil autentikasi tersebut. Jika integrasi tidak digunakan, variabel
+ini boleh dikosongkan.
 Rotasi dilakukan dengan memasang secret baru sebagai secret utama dan
 `UNIVERSAL_API_SERVICE_PREVIOUS_SECRET` sebagai secret lama, lalu menghapus
 secret lama setelah pemanggil beralih dan me-restart aplikasi. Pencabutan penuh
