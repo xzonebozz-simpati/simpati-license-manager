@@ -88,6 +88,37 @@ def test_secret_key_startup_diagnostic_logs_metadata_only(monkeypatch, caplog, t
     assert "placeholder=False default=False" in caplog.text
 
 
+def test_signing_key_startup_diagnostic_logs_metadata_only(monkeypatch, caplog, tmp_path):
+    from scripts import init_db
+
+    private_key = (
+        "-----BEGIN PRIVATE KEY-----\nprivate-test-material\n-----END PRIVATE KEY-----"
+    )
+    public_key = (
+        "-----BEGIN PUBLIC KEY-----\npublic-test-material\n-----END PUBLIC KEY-----"
+    )
+    vault_path = tmp_path / "root.key"
+    vault_path.write_text("test", encoding="utf-8")
+    vault_path.with_suffix(".pub").write_text("test", encoding="utf-8")
+    monkeypatch.setattr(init_db.settings, "ED25519_PRIVATE_KEY_PEM", private_key)
+    monkeypatch.setattr(init_db.settings, "ED25519_PUBLIC_KEY_PEM", public_key)
+    monkeypatch.setattr(init_db.settings, "SIGNING_KEY_VAULT_PATH", str(vault_path))
+
+    with caplog.at_level(logging.WARNING):
+        init_db._log_signing_key_diagnostics()
+
+    assert private_key not in caplog.text
+    assert public_key not in caplog.text
+    assert "private_env_present=True" in caplog.text
+    assert f"private_env_length={len(private_key)}" in caplog.text
+    assert "private_env_pem_markers_ok=True" in caplog.text
+    assert "public_env_present=True" in caplog.text
+    assert f"public_env_length={len(public_key)}" in caplog.text
+    assert "public_env_pem_markers_ok=True" in caplog.text
+    assert "vault_private_file_exists=True" in caplog.text
+    assert "vault_public_file_exists=True" in caplog.text
+
+
 def test_root_signing_keys_reject_mismatched_environment_pair(monkeypatch, tmp_path):
     from app.services import license_service
 

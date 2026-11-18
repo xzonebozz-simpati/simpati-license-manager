@@ -30,6 +30,35 @@ logger = logging.getLogger("simpati.scripts.init_db")
 settings = get_settings()
 
 
+def _log_signing_key_diagnostics() -> None:
+    private_key = settings.ED25519_PRIVATE_KEY_PEM or ""
+    public_key = settings.ED25519_PUBLIC_KEY_PEM or ""
+    vault_path = Path(settings.SIGNING_KEY_VAULT_PATH)
+    public_vault_path = vault_path.with_suffix(".pub")
+    private_key_stripped = private_key.strip()
+    public_key_stripped = public_key.strip()
+
+    logger.warning(
+        "Startup Ed25519 key diagnostic: "
+        "private_env_present=%s private_env_length=%d private_env_pem_markers_ok=%s "
+        "private_env_literal_newlines=%s public_env_present=%s public_env_length=%d "
+        "public_env_pem_markers_ok=%s public_env_literal_newlines=%s "
+        "vault_private_file_exists=%s vault_public_file_exists=%s",
+        bool(private_key),
+        len(private_key),
+        private_key_stripped.startswith("-----BEGIN PRIVATE KEY-----")
+        and private_key_stripped.endswith("-----END PRIVATE KEY-----"),
+        r"\n" in private_key,
+        bool(public_key),
+        len(public_key),
+        public_key_stripped.startswith("-----BEGIN PUBLIC KEY-----")
+        and public_key_stripped.endswith("-----END PUBLIC KEY-----"),
+        r"\n" in public_key,
+        vault_path.is_file(),
+        public_vault_path.is_file(),
+    )
+
+
 def seed_initial_data():
     """Seeds default modules, packages, administrative user, and settings if not present."""
     db = SessionLocal()
@@ -201,6 +230,7 @@ def seed_initial_data():
         # 8. Cryptographic Signing Key Record
         signing_key_id = "KEY-SIMPATI-ROOT-V1"
         key_record = db.query(SigningKey).filter(SigningKey.key_identifier == signing_key_id).first()
+        _log_signing_key_diagnostics()
         pub_pem = get_root_public_key()
         if not key_record:
             db.add(SigningKey(
