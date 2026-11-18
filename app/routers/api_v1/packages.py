@@ -22,7 +22,11 @@ from app.services.package_service import (
     set_package_status,
     get_package_detail,
 )
-from app.security.dependencies import require_superadmin
+from app.security.dependencies import (
+    LicenseApiPrincipal,
+    require_license_api_principal,
+    require_superadmin,
+)
 
 router = APIRouter(prefix="/api/v1/packages", tags=["Packages"])
 
@@ -33,7 +37,7 @@ def list_packages_endpoint(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    _: LicenseUser = Depends(require_superadmin)
+    _: LicenseApiPrincipal = Depends(require_license_api_principal)
 ):
     """Retrieves all commercial packages with optional active filter."""
     query = db.query(LicensePackage)
@@ -62,7 +66,7 @@ def list_packages_endpoint(
 @router.get("/modules/available", summary="List Available Modules Registry")
 def list_available_modules(
     db: Session = Depends(get_db),
-    _: LicenseUser = Depends(require_superadmin)
+    _: LicenseApiPrincipal = Depends(require_license_api_principal)
 ):
     """Returns all functional application modules available for package bundling."""
     modules = db.query(ModuleRegistry).order_by(ModuleRegistry.is_core.desc(), ModuleRegistry.module_code.asc()).all()
@@ -111,7 +115,7 @@ def create_package_endpoint(
 def get_package_endpoint(
     package_id: UUID,
     db: Session = Depends(get_db),
-    _: LicenseUser = Depends(require_superadmin)
+    _: LicenseApiPrincipal = Depends(require_license_api_principal)
 ):
     """Retrieves full package specification, modules, and commercial configurations."""
     detail = get_package_detail(db, package_id)
