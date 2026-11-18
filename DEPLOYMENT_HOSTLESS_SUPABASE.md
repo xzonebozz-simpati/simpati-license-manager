@@ -88,26 +88,19 @@ Permintaan layanan dan perubahan lisensi mencatat `service_id` pada audit log.
 
 ### 5. Langkah 4: Konfigurasi Build & Perintah Startup
 
-Aplikasi telah dilengkapi file `Procfile` di root direktori:
+Aplikasi telah dilengkapi file `Procfile` di root direktori. Startup terkontrol menjalankan migration runner satu kali sebelum memulai Uvicorn:
 
 ```text
-web: python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips "*"
-release: python -m scripts.release_migrations
+web: python -m scripts.start_web
 ```
 
 * **Buildpack / Runtime**: Python 3.11+
 * **Build Command**: `pip install -r requirements.txt`
-* **Release Command (Wajib)**:
-  Atur Release Command Hostless menjadi `python -m scripts.release_migrations`. Runner berpindah ke root repository, menolak konfigurasi selain PostgreSQL staging/production, menjalankan `python -m alembic upgrade head`, lalu memeriksa bahwa database/schema yang sama sudah mencapai head repository. Status gagal Alembic diteruskan ke Hostless sehingga Web tidak menerima traffic jika migrasi gagal.
+* **Start Command (wajib, tanpa Post Build/Release Command)**:
   ```bash
-  python -m scripts.release_migrations
+  python -m scripts.start_web
   ```
-  Alembic CLI dan Web menggunakan engine aplikasi yang sama, yang dibangun dari `DATABASE_URL` dan search path PostgreSQL dari environment. Log Release dan Web menampilkan APP_ENV, sumber konfigurasi, driver, nama database/schema, serta revisi—tanpa URL atau kredensial. Proses Web hanya memeriksa koneksi dan revisi terhadap head di repository yang sedang dideploy; Web tidak menjalankan migrasi atau seed. Jika database baru perlu data awal, jalankan `python -m scripts.init_db` satu kali setelah meninjau dampaknya.
-* **Start Command**:
-  ```bash
-  python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips "*"
-  ```
-  Package `app` juga mengekspos objek ASGI yang sama secara lazy agar konfigurasi lama `app:app` tetap dapat dimuat; perintah kanonis tetap menggunakan `app.main:app`.
+  Launcher menjalankan `scripts.release_migrations` sekali sebelum Uvicorn. Jika validasi, migration, atau pemeriksaan head gagal, proses berhenti dan Uvicorn tidak dijalankan; kegagalan runner dicatat di log. Migrasi berjalan di proses launcher, bukan pada setiap worker Uvicorn. Pastikan Hostless mengatur `PORT`. Migration runner memakai `DATABASE_URL` dan search path PostgreSQL environment, menjalankan `python -m alembic upgrade head`, lalu memeriksa database/schema terhadap repository head. Startup Web tetap mempertahankan pemeriksaan revision yang sudah ada. Jika database baru perlu data awal, jalankan `python -m scripts.init_db` satu kali setelah meninjau dampaknya.
 
 ---
 
@@ -154,5 +147,5 @@ Buka `https://license-staging.hostless.app/login` di peramban, lalu login menggu
 - [ ] **Generate Ed25519 Secret**: Jalankan skrip Python di langkah 3 dan salin string private key.
 - [ ] **Set Environment Variables**: Masukkan seluruh variabel tabel Langkah 3 ke dashboard Hostless.
 - [ ] **Deploy Branch**: Lakukan trigger deploy pada branch `feat/client-integration-support`.
-- [ ] **Jalankan Migrasi**: Pastikan `python -m alembic upgrade head` telah berjalan di database Supabase.
+- [ ] **Startup Command**: Atur Hostless Start Command ke `python -m scripts.start_web`; jangan gunakan Post Build atau Release Command untuk migration. Untuk database produksi yang sudah berisi data, buat backup dan verifikasi revision/schema aktual terlebih dahulu; jangan reset database atau mengubah `alembic_version` secara manual.
 - [ ] **Login & Ganti Password**: Masuk ke dashboard dan pastikan akun Superadmin aktif.
