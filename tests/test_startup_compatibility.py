@@ -23,24 +23,33 @@ def _mock_postgres_engine(monkeypatch, foreign_keys, orphan_count=0):
     return engine, connection
 
 
-def test_repairs_legacy_package_modules_foreign_key(monkeypatch):
+@pytest.mark.parametrize(
+    ("column", "legacy_table", "target_table"),
+    [
+        ("package_id", "packages", "license_packages"),
+        ("module_id", "modules", "module_registry"),
+    ],
+)
+def test_repairs_legacy_package_modules_foreign_key(
+    monkeypatch, column, legacy_table, target_table
+):
     engine, connection = _mock_postgres_engine(
         monkeypatch,
         [
             {
-                "name": "package_modules_package_id_fkey",
-                "constrained_columns": ["package_id"],
-                "referred_table": "packages",
+                "name": f"package_modules_{column}_fkey",
+                "constrained_columns": [column],
+                "referred_table": legacy_table,
                 "referred_schema": "public",
             }
         ],
     )
 
-    startup_compatibility.repair_package_modules_foreign_key(engine)
+    startup_compatibility.repair_package_modules_foreign_keys(engine)
 
     statements = [str(call.args[0]) for call in connection.execute.call_args_list]
-    assert "DROP CONSTRAINT package_modules_package_id_fkey" in statements[1]
-    assert "REFERENCES public.license_packages (id)" in statements[2]
+    assert f"DROP CONSTRAINT package_modules_{column}_fkey" in statements[1]
+    assert f"REFERENCES public.{target_table} (id)" in statements[2]
     assert len(statements) == 3
 
 
@@ -49,17 +58,17 @@ def test_does_not_change_foreign_key_when_legacy_rows_would_be_orphaned(monkeypa
         monkeypatch,
         [
             {
-                "name": "package_modules_package_id_fkey",
-                "constrained_columns": ["package_id"],
-                "referred_table": "packages",
+                "name": "package_modules_module_id_fkey",
+                "constrained_columns": ["module_id"],
+                "referred_table": "modules",
                 "referred_schema": "public",
             }
         ],
         orphan_count=2,
     )
 
-    with pytest.raises(RuntimeError, match="2 existing rows"):
-        startup_compatibility.repair_package_modules_foreign_key(engine)
+    with pytest.raises(RuntimeError, match="2 existing module_id rows"):
+        startup_compatibility.repair_package_modules_foreign_keys(engine)
 
     assert connection.execute.call_count == 1
 
@@ -78,7 +87,7 @@ def test_lifespan_repairs_schema_before_seeding(monkeypatch):
     )
     monkeypatch.setattr(
         main,
-        "repair_package_modules_foreign_key",
+        "repair_package_modules_foreign_keys",
         lambda engine: startup_steps.append("compatibility"),
     )
     monkeypatch.setattr(

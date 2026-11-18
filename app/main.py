@@ -14,7 +14,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from app.config import get_settings
 from app.database.connection import engine
 from app.models.base import Base
-from app.database.startup_compatibility import repair_package_modules_foreign_key
+from app.database.startup_compatibility import repair_package_modules_foreign_keys
 from app.routers import health_router, web_router, api_v1_router
 from app.security import (
     UnauthenticatedWebUserException,
@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI):
     startup_phase = "database schema creation"
     try:
         Base.metadata.create_all(bind=engine)
-        repair_package_modules_foreign_key(engine)
+        repair_package_modules_foreign_keys(engine)
         logger.info("Skema database terverifikasi.")
         startup_phase = "initial data seeding"
         seed_initial_data()
