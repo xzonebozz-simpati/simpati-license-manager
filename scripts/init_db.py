@@ -370,7 +370,7 @@ def seed_initial_data():
         logger.info("Inisialisasi database dan seeding data awal berhasil.")
     except Exception as exc:
         db.rollback()
-        logger.error(f"Gagal saat seeding database: {exc}")
+        logger.error("Gagal saat seeding database (%s).", type(exc).__name__)
         raise
     finally:
         db.close()

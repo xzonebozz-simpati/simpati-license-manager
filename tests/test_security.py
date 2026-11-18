@@ -1,5 +1,6 @@
 """Tests for Argon2id hashing, Ed25519 digital signature, and tokens."""
 
+import asyncio
 import logging
 import pytest
 from app.security.hashing import hash_password, verify_password, needs_rehash
@@ -117,6 +118,51 @@ def test_signing_key_startup_diagnostic_logs_metadata_only(monkeypatch, caplog, 
     assert "public_env_pem_markers_ok=True" in caplog.text
     assert "vault_private_file_exists=True" in caplog.text
     assert "vault_public_file_exists=True" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("failure_stage", "expected_phase"),
+    [
+        ("schema", "database schema creation"),
+        ("seed", "initial data seeding"),
+    ],
+)
+def test_startup_failure_logs_phase_and_redacted_exception(
+    monkeypatch, caplog, failure_stage, expected_phase
+):
+    from app import main
+
+    monkeypatch.setattr(main, "validate_universal_api_service_configuration", lambda: None)
+
+    def fail_startup(**kwargs):
+        raise RuntimeError(
+            "connection refused: postgresql+psycopg://dbuser:db-password@db.example/licenses "
+            "password=db-password token=staging-token"
+        )
+
+    if failure_stage == "schema":
+        monkeypatch.setattr(main.Base.metadata, "create_all", fail_startup)
+    else:
+        monkeypatch.setattr(main.Base.metadata, "create_all", lambda **kwargs: None)
+        monkeypatch.setattr(main, "seed_initial_data", fail_startup)
+
+    async def enter_lifespan():
+        async with main.lifespan(main.app):
+            pass
+
+    with caplog.at_level(logging.ERROR, logger="simpati.app"):
+        with pytest.raises(RuntimeError, match="tidak dapat dimulai"):
+            asyncio.run(enter_lifespan())
+
+    startup_record = next(
+        record for record in caplog.records
+        if record.name == "simpati.app" and "Startup gagal" in record.getMessage()
+    )
+    assert expected_phase in startup_record.getMessage()
+    assert "RuntimeError" in startup_record.getMessage()
+    assert "connection refused" in startup_record.getMessage()
+    assert "db-password" not in caplog.text
+    assert "staging-token" not in caplog.text
 
 
 def test_root_signing_keys_reject_mismatched_environment_pair(monkeypatch, tmp_path):

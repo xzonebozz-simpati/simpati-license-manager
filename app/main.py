@@ -2,6 +2,7 @@
 
 import logging
 import hashlib
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, Request, status
@@ -40,19 +41,43 @@ logger = logging.getLogger("simpati.app")
 settings = get_settings()
 BASE_DIR = Path(__file__).resolve().parent
 
+_STARTUP_URL_CREDENTIALS = re.compile(r"(?i)([a-z][a-z0-9+.-]*://)[^@\s]+@")
+_STARTUP_SECRET_ASSIGNMENT = re.compile(
+    r"(?i)\b(?P<name>[a-z0-9_]*(?:password|passwd|secret|token|authorization|"
+    r"credential|private[_ -]?key|api[_ -]?key)[a-z0-9_]*)\b"
+    r"\s*(?P<separator>[:=])\s*(?:'[^']*'|\"[^\"]*\"|[^,\s;]+)"
+)
+
+
+def _sanitize_startup_exception_message(message: str) -> str:
+    """Redacts common credentials before exposing a startup failure in logs."""
+    sanitized = " ".join(message.split())
+    sanitized = _STARTUP_URL_CREDENTIALS.sub(r"\1<redacted>@", sanitized)
+    return _STARTUP_SECRET_ASSIGNMENT.sub(
+        r"\g<name>\g<separator><redacted>",
+        sanitized
+    )
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan event handler for startup and graceful shutdown."""
     logger.info("Memulai SIMPATI License Manager...")
     validate_universal_api_service_configuration()
+    startup_phase = "database schema creation"
     try:
         Base.metadata.create_all(bind=engine)
         logger.info("Skema database terverifikasi.")
+        startup_phase = "initial data seeding"
         seed_initial_data()
     except Exception as exc:
-        logger.exception("Startup gagal saat menyiapkan database atau data awal.")
-        raise RuntimeError("License Manager tidak dapat dimulai tanpa database siap.") from exc
+        logger.error(
+            "Startup gagal saat %s (%s): %s",
+            startup_phase,
+            type(exc).__name__,
+            _sanitize_startup_exception_message(str(exc)),
+        )
+        raise RuntimeError("License Manager tidak dapat dimulai tanpa database siap.") from None
 
     yield
 
