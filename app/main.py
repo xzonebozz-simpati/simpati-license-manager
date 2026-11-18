@@ -20,6 +20,7 @@ from app.security import (
     CSRF_HEADER_NAME,
     verify_csrf_token
 )
+from app.security.dependencies import validate_universal_api_service_configuration
 from scripts.init_db import seed_initial_data
 
 def _compute_static_version() -> str:
@@ -44,6 +45,7 @@ BASE_DIR = Path(__file__).resolve().parent
 async def lifespan(app: FastAPI):
     """Application lifespan event handler for startup and graceful shutdown."""
     logger.info("Memulai SIMPATI License Manager...")
+    validate_universal_api_service_configuration()
     try:
         Base.metadata.create_all(bind=engine)
         logger.info("Skema database terverifikasi.")

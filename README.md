@@ -182,6 +182,14 @@ DATABASE_URL=postgresql+psycopg2://postgres:password_anda@localhost:5432/simpati
 ```
 *(Catatan: Jika Anda ingin mencoba secara langsung tanpa menyiapkan server PostgreSQL terlebih dahulu, biarkan `DATABASE_URL=sqlite:///./simpati_license.db`).*
 
+Untuk akses service-to-service dari Universal API, isi `UNIVERSAL_API_SERVICE_ID`
+dan `UNIVERSAL_API_SERVICE_SECRET` dengan pasangan yang sama seperti
+`LICENSE_MANAGER_SERVICE_ID` dan `LICENSE_MANAGER_SERVICE_SECRET` di Universal API.
+Secret aktif minimal 32 karakter. Kredensial ini hanya memberi akses baca paket,
+customer dan lisensi serta menerbitkan lisensi; akses lain tetap memerlukan
+Superadmin. Saat rotasi, `UNIVERSAL_API_SERVICE_PREVIOUS_SECRET` dapat diisi
+sementara dengan secret sebelumnya.
+
 ### Langkah 5: Inisialisasi Database & Seeding Data Awal
 Untuk deployment staging/production, isi dahulu seluruh secret dan kunci Ed25519 seperti pada `.env.example`. Jalankan migration skema sebelum inisialisasi:
 ```powershell

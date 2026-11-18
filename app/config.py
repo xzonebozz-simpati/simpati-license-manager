@@ -7,7 +7,7 @@ centralized application settings for Local, Staging, and Production (Hostless + 
 import os
 from functools import lru_cache
 from typing import List, Optional
-from pydantic import Field, AliasChoices, model_validator
+from pydantic import Field, AliasChoices, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,6 +19,16 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore"
+    )
+
+    UNIVERSAL_API_SERVICE_ID: Optional[str] = None
+    UNIVERSAL_API_SERVICE_SECRET: Optional[SecretStr] = Field(
+        default=None,
+        repr=False,
+    )
+    UNIVERSAL_API_SERVICE_PREVIOUS_SECRET: Optional[SecretStr] = Field(
+        default=None,
+        repr=False,
     )
 
     # General App Settings & Port Binding
