@@ -66,7 +66,7 @@ logger = logging.getLogger("simpati.license_client")
 
 DEFAULT_EMBEDDED_PUBLIC_KEY = (
     "-----BEGIN PUBLIC KEY-----\n"
-    "MCowBQYDK2VwAyEAjh++nc9ibA6aA8sgleuMEIfKew6WvWduo/uV+AEeplU=\n"
+    "MCowBQYDK2VwAyEA8wDR5dLrD3VfdYKkoHBg/r7YxVFXPxaxVdZpWd9YcJI=\n"
     "-----END PUBLIC KEY-----\n"
 )
 
