@@ -2,7 +2,7 @@
 
 from typing import List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
@@ -83,8 +83,9 @@ def list_licenses_endpoint(
     customer_id: Optional[UUID] = None,
     package_id: Optional[UUID] = None,
     status_filter: Optional[str] = None,
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(0, ge=0),
+    offset: Optional[int] = Query(None, ge=0),
+    limit: int = Query(100, ge=1),
     db: Session = Depends(get_db),
     _: LicenseApiPrincipal = Depends(require_license_api_principal)
 ):
@@ -97,7 +98,12 @@ def list_licenses_endpoint(
     if status_filter:
         query = query.filter(License.status == status_filter)
 
-    licenses = query.order_by(License.created_at.desc()).offset(skip).limit(limit).all()
+    licenses = (
+        query.order_by(License.created_at.desc())
+        .offset(offset if offset is not None else skip)
+        .limit(limit)
+        .all()
+    )
     results = []
     for lic in licenses:
         linked_inst_codes = [link.installation.installation_code for link in lic.installations if link.installation]

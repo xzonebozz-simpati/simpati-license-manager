@@ -2,7 +2,7 @@
 
 from typing import List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
@@ -34,8 +34,9 @@ router = APIRouter(prefix="/api/v1/packages", tags=["Packages"])
 @router.get("", response_model=List[PackageResponse], summary="List Packages")
 def list_packages_endpoint(
     is_active: Optional[bool] = None,
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(0, ge=0),
+    offset: Optional[int] = Query(None, ge=0),
+    limit: int = Query(100, ge=1),
     db: Session = Depends(get_db),
     _: LicenseApiPrincipal = Depends(require_license_api_principal)
 ):
@@ -43,7 +44,12 @@ def list_packages_endpoint(
     query = db.query(LicensePackage)
     if is_active is not None:
         query = query.filter(LicensePackage.is_active == is_active)
-    packages = query.order_by(LicensePackage.created_at.desc()).offset(skip).limit(limit).all()
+    packages = (
+        query.order_by(LicensePackage.created_at.desc())
+        .offset(offset if offset is not None else skip)
+        .limit(limit)
+        .all()
+    )
 
     results = []
     for p in packages:

@@ -140,13 +140,23 @@ def test_service_license_routes_and_business_audit(
     assert created.status_code == 201, created.text
     license_id = created.json()["id"]
 
-    listed = client.get("/api/v1/licenses", headers=headers)
+    listed = client.get(
+        "/api/v1/licenses?limit=100&offset=0",
+        headers=headers,
+    )
+    packages_listed = client.get(
+        "/api/v1/packages?limit=100&offset=0",
+        headers=headers,
+    )
     detailed = client.get(f"/api/v1/licenses/{license_id}/detail", headers=headers)
     package_detail = client.get(
         f"/api/v1/packages/{package.id}/detail",
         headers=headers,
     )
     assert listed.status_code == 200
+    assert any(item["id"] == license_id for item in listed.json())
+    assert packages_listed.status_code == 200, packages_listed.text
+    assert any(item["id"] == str(package.id) for item in packages_listed.json())
     assert detailed.status_code == 200
     assert package_detail.status_code == 200
 
