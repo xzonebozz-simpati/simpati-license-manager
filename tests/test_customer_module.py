@@ -227,6 +227,19 @@ def test_delete_customer_requires_exact_name_confirmation(client, db_session):
     assert db_session.query(Customer).filter(Customer.id == cust.id).first() is not None
 
 
+def test_delete_customer_allows_case_insensitive_and_trimmed_confirmation(client, db_session):
+    client.post("/api/v1/auth/login", json={"username": "superadmin", "password": "SuperAdmin@2026!"})
+    csrf_token = client.cookies.get("simpati_csrf_token")
+    cust = Customer(customer_code=f"CUST-CASE-{uuid.uuid4().hex[:6]}", organization_name="Case Sensitivity Org",
+                    contact_person="Contact", contact_email="case@test.id")
+    db_session.add(cust)
+    db_session.commit()
+    res = client.request("DELETE", f"/api/v1/customers/{cust.id}", json={"confirmation": "  case sensitivity org  "},
+                        headers={"X-CSRF-Token": csrf_token})
+    assert res.status_code == 200
+    assert db_session.query(Customer).filter(Customer.id == cust.id).first() is None
+
+
 def test_safe_delete_customer_clean_success(client, db_session):
     """Verifies that deleting a customer with NO relations succeeds cleanly."""
     client.post("/api/v1/auth/login", json={"username": "superadmin", "password": "SuperAdmin@2026!"})

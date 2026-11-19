@@ -178,7 +178,9 @@ def remove_customer(
     customer = get_customer_by_id(db=db, customer_id=customer_id)
     if not customer:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pelanggan tidak ditemukan.")
-    if confirmation.strip() != customer.organization_name:
+    expected_org_name = (customer.organization_name or "").strip()
+    provided_confirmation = confirmation.strip()
+    if provided_confirmation.casefold() != expected_org_name.casefold():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                             detail="Konfirmasi nama organisasi tidak cocok. Penghapusan dibatalkan.")
     success, message = delete_customer(db=db, customer_id=customer_id, user_id=current_user.id)

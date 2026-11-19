@@ -469,24 +469,111 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 5. Delete Customer with Relational Checks
     let pendingDeleteCustomerId = null;
+    let pendingDeleteCustomerOrgName = '';
 
     window.confirmDeleteCustomer = function(customerId, orgName) {
         pendingDeleteCustomerId = customerId;
-        document.getElementById('deleteTargetOrgName').innerText = orgName;
+        pendingDeleteCustomerOrgName = (orgName || '').trim();
+        const targetOrgElem = document.getElementById('deleteTargetOrgName');
+        if (targetOrgElem) targetOrgElem.innerText = pendingDeleteCustomerOrgName;
+
         const confirmationInput = document.getElementById('deleteCustomerNameConfirmation');
-        if (confirmationInput) confirmationInput.value = '';
+        const validationMsg = document.getElementById('deleteCustomerValidationMsg');
+        if (confirmationInput) {
+            confirmationInput.value = '';
+            confirmationInput.style.borderColor = '';
+        }
+        if (validationMsg) {
+            validationMsg.style.display = 'none';
+            validationMsg.innerText = '';
+        }
+
         window.openModal('modalDeleteCustomerConfirm');
+        if (confirmationInput) {
+            setTimeout(() => confirmationInput.focus(), 150);
+        }
     };
+
+    // Quick auto-fill button and clickable target name
+    const btnCopyOrFillOrg = document.getElementById('btnCopyOrFillOrgName');
+    if (btnCopyOrFillOrg) {
+        btnCopyOrFillOrg.addEventListener('click', () => {
+            const expected = pendingDeleteCustomerOrgName || (document.getElementById('deleteTargetOrgName') ? document.getElementById('deleteTargetOrgName').innerText.trim() : '');
+            const input = document.getElementById('deleteCustomerNameConfirmation');
+            if (input && expected) {
+                input.value = expected;
+                input.dispatchEvent(new Event('input'));
+                input.focus();
+            }
+        });
+    }
+
+    const targetOrgClickable = document.getElementById('deleteTargetOrgName');
+    if (targetOrgClickable) {
+        targetOrgClickable.addEventListener('click', () => {
+            const btn = document.getElementById('btnCopyOrFillOrgName');
+            if (btn) btn.click();
+        });
+    }
+
+    // Real-time confirmation input feedback
+    const customerConfirmInput = document.getElementById('deleteCustomerNameConfirmation');
+    if (customerConfirmInput) {
+        customerConfirmInput.addEventListener('input', () => {
+            const expected = (pendingDeleteCustomerOrgName || (document.getElementById('deleteTargetOrgName') ? document.getElementById('deleteTargetOrgName').innerText : '')).trim();
+            const current = customerConfirmInput.value.trim();
+            const validationMsg = document.getElementById('deleteCustomerValidationMsg');
+
+            if (!current) {
+                customerConfirmInput.style.borderColor = '';
+                if (validationMsg) validationMsg.style.display = 'none';
+                return;
+            }
+
+            if (current.toLowerCase() === expected.toLowerCase()) {
+                customerConfirmInput.style.borderColor = '#10b981';
+                if (validationMsg) {
+                    validationMsg.style.display = 'block';
+                    validationMsg.style.color = '#34d399';
+                    validationMsg.innerText = '✓ Nama organisasi cocok. Siap dihapus.';
+                }
+            } else {
+                customerConfirmInput.style.borderColor = '#ef4444';
+                if (validationMsg) {
+                    validationMsg.style.display = 'block';
+                    validationMsg.style.color = '#f87171';
+                    validationMsg.innerText = 'Belum cocok dengan: "' + expected + '"';
+                }
+            }
+        });
+
+        customerConfirmInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const btn = document.getElementById('btnExecuteDeleteCustomer');
+                if (btn) btn.click();
+            }
+        });
+    }
 
     const btnExecuteDelete = document.getElementById('btnExecuteDeleteCustomer');
     if (btnExecuteDelete) {
         btnExecuteDelete.addEventListener('click', async () => {
             if (!pendingDeleteCustomerId) return;
 
-            const expectedName = document.getElementById('deleteTargetOrgName').innerText.trim();
-            const confirmation = document.getElementById('deleteCustomerNameConfirmation').value.trim();
-            if (confirmation !== expectedName) {
-                alert('Nama organisasi tidak cocok. Penghapusan dibatalkan.');
+            const expectedName = (pendingDeleteCustomerOrgName || (document.getElementById('deleteTargetOrgName') ? document.getElementById('deleteTargetOrgName').innerText : '')).trim();
+            const confirmationInput = document.getElementById('deleteCustomerNameConfirmation');
+            const confirmation = confirmationInput ? confirmationInput.value.trim() : '';
+
+            if (!confirmation) {
+                alert('Silakan ketik atau klik "Isi Otomatis" untuk memasukkan nama organisasi:\n"' + expectedName + '"\nsebagai konfirmasi penghapusan permanen.');
+                if (confirmationInput) confirmationInput.focus();
+                return;
+            }
+
+            if (confirmation.toLowerCase() !== expectedName.toLowerCase()) {
+                alert('Nama organisasi tidak cocok.\n\nHarap masukkan:\n' + expectedName + '\n\nAnda mengetik:\n' + confirmation);
+                if (confirmationInput) confirmationInput.focus();
                 return;
             }
 
@@ -500,7 +587,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         'Content-Type': 'application/json',
                         'X-CSRF-Token': window.getCsrfToken()
                     },
-                    body: JSON.stringify({ confirmation }),
+                    body: JSON.stringify({ confirmation: expectedName }),
                     credentials: 'same-origin'
                 });
                 const data = await res.json();
@@ -523,6 +610,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 btnExecuteDelete.disabled = false;
                 btnExecuteDelete.innerText = 'Hapus Permanen Semua Data';
                 pendingDeleteCustomerId = null;
+                pendingDeleteCustomerOrgName = '';
             }
         });
     }

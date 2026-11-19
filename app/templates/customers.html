@@ -91,7 +91,10 @@
                                 </button>
                                 {% endif %}
                                 <button 
-                                    onclick="confirmDeleteCustomer('{{ c.id }}', '{{ c.organization_name | e }}')" 
+                                    type="button"
+                                    data-customer-id="{{ c.id }}" 
+                                    data-org-name="{{ c.organization_name }}"
+                                    onclick="confirmDeleteCustomer(this.dataset.customerId, this.dataset.orgName)" 
                                     class="btn btn-secondary btn-sm" 
                                     style="border-color: rgba(239, 68, 68, 0.6); color: #f87171;" 
                                     title="Hapus Permanen Pelanggan dan Seluruh Datanya"
@@ -326,15 +329,20 @@
                 <span>⚠️</span>
                 <span>Penghapusan permanen akan menghapus pelanggan, seluruh lisensi, instalasi, kredensial, validasi, dan riwayat lisensi terkait. Tindakan ini tidak dapat dibatalkan.</span>
             </div>
-            <p style="font-size: 13px; color: var(--text-main); margin-bottom: 12px;">
-                Untuk mengonfirmasi penghapusan permanen, ketik nama organisasi pelanggan berikut:
+            <p style="font-size: 13px; color: var(--text-main); margin-bottom: 8px;">
+                Untuk mengonfirmasi penghapusan permanen, ketik atau klik nama organisasi pelanggan berikut:
             </p>
-            <div style="background: rgba(0,0,0,0.4); padding: 12px; border-radius: 6px; border: 1px solid var(--border-color); text-align: center;">
-                <strong id="deleteTargetOrgName" style="color: var(--gold-light); font-size: 15px;"></strong>
+            <div style="background: rgba(0,0,0,0.4); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                <strong id="deleteTargetOrgName" style="color: var(--gold-light); font-size: 15px; word-break: break-all; cursor: pointer;" title="Klik untuk mengisi otomatis"></strong>
+                <button type="button" id="btnCopyOrFillOrgName" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 4px 10px; white-space: nowrap; border-color: var(--gold-primary);" title="Salin & Isi Otomatis">
+                    📋 Isi Otomatis
+                </button>
             </div>
-            <input id="deleteCustomerNameConfirmation" class="form-control" type="text"
-                   placeholder="Ketik nama organisasi persis seperti di atas" autocomplete="off"
-                   style="margin-top:12px;" />
+            <div style="margin-top: 12px;">
+                <input id="deleteCustomerNameConfirmation" class="form-control" type="text"
+                       placeholder="Ketik nama organisasi persis seperti di atas" autocomplete="off" />
+                <div id="deleteCustomerValidationMsg" style="font-size: 12px; margin-top: 6px; display: none;"></div>
+            </div>
         </div>
         <div class="modal-footer">
             <button type="button" onclick="closeModal('modalDeleteCustomerConfirm')" class="btn btn-secondary">Batal</button>
